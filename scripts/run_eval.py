@@ -31,7 +31,7 @@ pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "got-rag-platform")
 32| index = pc.Index(INDEX_NAME)
 33| 
-34| EMBED_MODEL = "jina-embeddings-v2-base-en"  # Changed from v3-base to v2-base-en
+34| EMBED_MODEL = "jina-embeddings-v3"  # Changed from v3-base to v2-base-en
 35| LLM_MODEL = "llama-3.1-8b-instant"
 36| TOP_K = 8
 
