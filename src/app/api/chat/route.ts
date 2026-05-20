@@ -2,6 +2,47 @@ import { NextRequest } from 'next/server'
 
 export const maxDuration = 60
 
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
+const MAX_RETRIES = 3
+const BASE_DELAY_MS = 2000  // Groq TPM limits reset quickly
+
+async function fetchGroqWithRetry(
+  body: object,
+  apiKey: string,
+  retries = MAX_RETRIES
+): Promise<Response> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const res = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (res.status === 429) {
+      const delay = BASE_DELAY_MS * 2 ** (attempt - 1) // 2s, 4s, 8s
+      console.warn(`Groq 429 (attempt ${attempt}/${retries}). Retrying in ${delay}ms...`)
+      await new Promise((r) => setTimeout(r, delay))
+      continue
+    }
+
+    // Non-429: return immediately (caller handles other errors)
+    return res
+  }
+
+  // All retries exhausted — return the last 429 response
+  return await fetch(GROQ_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  })
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { messages, sources } = await req.json()
@@ -19,49 +60,44 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Build a tighter context block to reduce TPM
     const contextText = sources
       .map(
         (s: any, i: number) =>
-          `[${i + 1}] ${s.book} ${s.chapter ? `— ${s.chapter}` : ''} (p.${s.start_page}${
+          `[${i + 1}] ${s.book} p.${s.start_page}${
             s.end_page !== s.start_page ? `-${s.end_page}` : ''
-          }):\n${s.text}`
+          }: ${s.text.slice(0, 500)}` // cap each source to 500 chars to save tokens
       )
-      .join('\n\n---\n\n')
+      .join('\n---\n')
 
     const systemPrompt =
-      `You are the Grand Maester of the Citadel, the foremost living authority on A Song of Ice and Fire.\n` +
-      `You answer questions using ONLY the provided manuscript excerpts below.\n` +
-      `If the context does not contain the answer, say you lack the scrolls on that matter.\n` +
-      `Cite sources using bracket numbers like [1], [2] whenever possible.\n` +
-      `Be precise about lineages, geographies, and heraldry.\n\n` +
-      `CONTEXT SECTIONS:\n${contextText}\n\n` +
-      `Now answer the user's question.`
+      `You are the Grand Maester of the Citadel. Answer using ONLY the excerpts below. ` +
+      `Cite sources [1], [2], etc. If unknown, say you lack the scrolls.\n\n` +
+      `EXCERPTS:\n${contextText}`
 
-    const groqMessages = [
-      { role: 'system', content: systemPrompt },
-      ...messages.slice(-6),
-    ]
+    const groqBody = {
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...messages.slice(-6),
+      ],
+      temperature: 0.25,
+      max_tokens: 500, // reduced from 900 to stay under free-tier TPM
+      stream: true,
+    }
 
-    // === GROQ STREAMING via raw fetch (OpenAI-compatible endpoint) ===
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: groqMessages,
-        temperature: 0.25,
-        max_tokens: 900,
-        stream: true,
-      }),
-    })
+    const groqRes = await fetchGroqWithRetry(groqBody, process.env.GROQ_API_KEY)
 
     if (!groqRes.ok) {
       const errText = await groqRes.text()
+      console.error('Groq error after retries:', groqRes.status, errText)
       return new Response(
-        JSON.stringify({ error: `Groq error: ${groqRes.status} ${errText.slice(0, 200)}` }),
+        JSON.stringify({
+          error:
+            groqRes.status === 429
+              ? 'Groq rate limit exceeded. Please wait 10-20 seconds and try again.'
+              : `Groq error: ${groqRes.status} ${errText.slice(0, 200)}`,
+        }),
         { status: 502, headers: { 'Content-Type': 'application/json' } }
       )
     }
@@ -73,7 +109,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Proxy the SSE stream directly — no parsing needed
+    // Proxy the SSE stream directly
     return new Response(groqRes.body, {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -81,7 +117,6 @@ export async function POST(req: NextRequest) {
         Connection: 'keep-alive',
       },
     })
-
   } catch (err: any) {
     console.error('Chat error:', err)
     return new Response(JSON.stringify({ error: err.message || 'Internal error' }), {
