@@ -14,13 +14,15 @@ on:
 permissions:
   contents: write
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   ingest:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+      PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'got-rag-platform' }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -38,53 +40,82 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
 
+      - name: Verify API keys are present
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then echo "❌ OPENAI_API_KEY is empty"; exit 1; else echo "✅ OPENAI_API_KEY is set"; fi
+          if [ -z "$PINECONE_API_KEY" ]; then echo "❌ PINECONE_API_KEY is empty"; exit 1; else echo "✅ PINECONE_API_KEY is set"; fi
+          echo "✅ PINECONE_INDEX_NAME=$PINECONE_INDEX_NAME"
+
       - name: Check if ingestion is needed
         id: state
         run: python scripts/check_ingestion_needed.py
 
-      - name: Diagnostic — Show state
+      - name: Diagnostic — Show check result
         run: |
           echo "needed=${{ steps.state.outputs.needed }}"
-          ls -la data/pdfs/ || echo "No PDF dir"
-          ls -la public/extracted/ || echo "No extracted dir yet"
+          echo "--- PDFs ---"
+          ls -la data/pdfs/ || echo "❌ No PDF dir"
+          echo "--- Existing extracted ---"
+          ls -la public/extracted/ 2>/dev/null || echo "⚠️  No extracted dir yet (expected)"
 
-      - name: Run full ingestion pipeline
+      - name: Setup Pinecone index
         if: steps.state.outputs.needed == 'true'
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'got-rag-platform' }}
-        run: python scripts/run_all.py
+        run: python scripts/04_setup_pinecone.py
 
-      - name: Write ingestion state on success
+      - name: Parse PDFs (text + images)
+        if: steps.state.outputs.needed == 'true'
+        run: python scripts/01_parse_pdfs.py
+
+      - name: Diagnostic — Check parsed output
+        if: steps.state.outputs.needed == 'true'
+        run: |
+          echo "--- processed ---"
+          ls -la data/processed/ || echo "❌ No processed dir"
+          echo "--- extracted ---"
+          ls -la public/extracted/ || echo "❌ No extracted dir"
+          find public/extracted/ -type f | head -10 || echo "⚠️  No image files extracted"
+
+      - name: Describe images with Vision AI
+        if: steps.state.outputs.needed == 'true'
+        run: python scripts/02_describe_images.py
+        continue-on-error: true
+
+      - name: Chunk, embed & upsert to Pinecone
+        if: steps.state.outputs.needed == 'true'
+        run: python scripts/03_chunk_embed_upsert.py
+
+      - name: Run evaluation suite
+        if: steps.state.outputs.needed == 'true'
+        run: python scripts/run_eval.py
+        continue-on-error: true
+
+      - name: Write ingestion state (only on success)
         if: steps.state.outputs.needed == 'true'
         run: python scripts/write_ingestion_state.py
 
-      - name: Diagnostic — List generated artifacts
-        if: steps.state.outputs.needed == 'true'
+      - name: Diagnostic — Final artifact listing
+        if: always() && steps.state.outputs.needed == 'true'
         run: |
           echo "=== PROCESSED ==="
-          ls -la data/processed/ || echo "No processed dir"
+          ls -la data/processed/ 2>/dev/null || true
           echo "=== EXTRACTED ==="
-          find public/extracted/ -type f | head -20 || echo "No extracted files"
+          find public/extracted/ -type f 2>/dev/null | wc -l || true
           echo "=== EVAL ==="
-          ls -la eval/ || echo "No eval dir"
+          ls -la eval/ 2>/dev/null || true
           echo "=== STATE ==="
-          ls -la data/.ingestion_state.json || echo "No state file"
+          ls -la data/.ingestion_state.json 2>/dev/null || true
 
       - name: Commit & push artifacts
-        if: steps.state.outputs.needed == 'true'
+        if: always() && steps.state.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Ensure directories exist so git add doesn't crash on missing paths
           mkdir -p public/extracted eval data
-
           git add public/extracted/ eval/results.json data/.ingestion_state.json
 
           if git diff --cached --quiet; then
-            echo "🟡 No artifact changes to commit.."
+            echo "🟡 No artifact changes to commit."
           else
             git commit -m "ci: auto-ingest lore, maps & eval metrics [skip ci]"
             git push origin HEAD:${{ github.ref_name }}
