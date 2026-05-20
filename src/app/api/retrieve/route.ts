@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { index } from '@/lib/pinecone'
+import { safeKvLpush, safeKvSet } from '@/lib/kv'
 
 export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
+  const t0 = Date.now()
   try {
     const { query, topK = 8, bookFilter } = await req.json()
     if (!query || typeof query !== 'string') {
@@ -18,7 +20,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // === JINA EMBEDDING via raw fetch (bypass OpenAI SDK quirks) ===
+    // === JINA EMBEDDING via raw fetch ===
     const jinaRes = await fetch('https://api.jina.ai/v1/embeddings', {
       method: 'POST',
       headers: {
@@ -65,8 +67,39 @@ export async function POST(req: NextRequest) {
     })
 
     const chunks = (results.matches || []).map((m: any) => m.metadata)
-    return NextResponse.json({ chunks })
+    const latencyMs = Date.now() - t0
 
+    // === LIVE OPERATIONAL METRICS LOGGING ===
+    const logEntry = {
+      t: Date.now(),
+      q: query.slice(0, 120), // truncated for privacy/safety
+      k: topK,
+      c: chunks.length,
+      l: latencyMs,
+    }
+    await safeKvLpush('citadel:ops:queries', JSON.stringify(logEntry), 200)
+
+    // Update rolling summary
+    const recentLogs = await safeKvLrange<string>('citadel:ops:queries', 0, 99)
+    const parsed = recentLogs
+      .map((s) => {
+        try {
+          return JSON.parse(s)
+        } catch {
+          return null
+        }
+      })
+      .filter(Boolean)
+    const total = parsed.length
+    const avgLat = total > 0 ? parsed.reduce((a, b) => a + (b.l || 0), 0) / total : 0
+    await safeKvSet('citadel:ops:summary', {
+      totalQueries: total,
+      avgLatencyMs: Math.round(avgLat),
+      lastQueryAt: Date.now(),
+      lastQuery: query.slice(0, 120),
+    })
+
+    return NextResponse.json({ chunks, latencyMs })
   } catch (err: any) {
     console.error('Retrieve error:', err)
     return NextResponse.json(
