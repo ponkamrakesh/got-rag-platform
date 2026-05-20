@@ -56,7 +56,7 @@ jobs:
           echo "--- PDFs ---"
           ls -la data/pdfs/ || echo "❌ No PDF dir"
           echo "--- Existing extracted ---"
-          ls -la public/extracted/ 2>/dev/null || echo "⚠️  No extracted dir yet (expected)"
+          ls -la public/extracted/ 2>/dev/null || echo " No extracted dir yet (expected)"
 
       - name: Setup Pinecone index
         if: steps.state.outputs.needed == 'true'
