@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { index } from '@/lib/pinecone'
-import { safeKvLpush, safeKvSet } from '@/lib/kv'
+import { safeKvLpush, safeKvSet, safeKvLrange } from '@/lib/kv'
 
 export const maxDuration = 60
 
@@ -72,29 +72,24 @@ export async function POST(req: NextRequest) {
     // === LIVE OPERATIONAL METRICS LOGGING ===
     const logEntry = {
       t: Date.now(),
-      q: query.slice(0, 120), // truncated for privacy/safety
+      q: query.slice(0, 120),
       k: topK,
       c: chunks.length,
       l: latencyMs,
     }
-    await safeKvLpush('citadel:ops:queries', JSON.stringify(logEntry), 200)
+    // @upstash/redis auto-serializes objects
+    await safeKvLpush('citadel:ops:queries', logEntry, 200)
 
-    // Update rolling summary
-    const recentLogs = await safeKvLrange<string>('citadel:ops:queries', 0, 99)
-    const parsed = recentLogs
-      .map((s) => {
-        try {
-          return JSON.parse(s)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean)
-    const total = parsed.length
-    const avgLat = total > 0 ? parsed.reduce((a, b) => a + (b.l || 0), 0) / total : 0
+    // Update rolling summary from last 100 log entries
+    const recentLogs = await safeKvLrange<typeof logEntry>('citadel:ops:queries', 0, 99)
+    const total = recentLogs.length
+    const avgLat = total > 0
+      ? Math.round(recentLogs.reduce((a, b) => a + (b.l || 0), 0) / total)
+      : 0
+
     await safeKvSet('citadel:ops:summary', {
       totalQueries: total,
-      avgLatencyMs: Math.round(avgLat),
+      avgLatencyMs: avgLat,
       lastQueryAt: Date.now(),
       lastQuery: query.slice(0, 120),
     })
