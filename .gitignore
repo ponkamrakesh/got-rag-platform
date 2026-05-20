@@ -40,10 +40,20 @@ __pycache__/
 *.so
 .venv
 
-# data outputs (keep structure, ignore large blobs optionally)
+# === PIPELINE / AUTOMATION ===
+# Intermediate processed JSONL files (large, rebuildable)
 /data/processed/
-# if extracted images are huge, uncomment below:
+
+# Extracted images ARE committed so Vercel serves them statically.
+# If your repo grows >100MB, switch to Git LFS or external CDN.
+# Do NOT uncomment the line below.
 # /public/extracted/
 
-# eval results (keep if you want dashboard to work out-of-box on clone)
+# Eval results ARE committed so the Vercel dashboard can read them.
 # /eval/results.json
+
+# Ingestion state hash file IS committed so CI knows what changed.
+# /data/.ingestion_state.json
+
+# PDFs: commit them if repo size allows, otherwise use Git LFS or cloud storage.
+# /data/pdfs/
