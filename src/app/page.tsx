@@ -19,6 +19,28 @@ type Message = {
   content: string
 }
 
+// SSE parser: extract content from Groq/OpenAI-compatible stream chunks
+function parseSSEChunk(raw: string): string {
+  let text = ''
+  const lines = raw.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || !trimmed.startsWith('data: ')) continue
+    const payload = trimmed.slice(6).trim()
+    if (payload === '[DONE]') continue
+    try {
+      const json = JSON.parse(payload)
+      const delta = json.choices?.[0]?.delta?.content
+      if (typeof delta === 'string') {
+        text += delta
+      }
+    } catch {
+      // ignore malformed JSON lines
+    }
+  }
+  return text
+}
+
 export default function HomePage() {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>([
@@ -55,8 +77,18 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: userMsg, topK: 8 }),
       })
-      if (!retrieveRes.ok) throw new Error('Retrieve failed')
+
+      if (!retrieveRes.ok) {
+        const errBody = await retrieveRes.text()
+        throw new Error(
+          `Retrieve HTTP ${retrieveRes.status}: ${errBody.slice(0, 200)}`
+        )
+      }
+
       const { chunks } = await retrieveRes.json()
+      if (!Array.isArray(chunks)) {
+        throw new Error('Retrieve returned invalid chunks format')
+      }
       setSources(chunks || [])
 
       // 2. Stream answer
@@ -74,18 +106,44 @@ export default function HomePage() {
       })
 
       if (!chatRes.ok || !chatRes.body) {
-        throw new Error('Chat stream failed')
+        const errBody = chatRes.ok ? '' : await chatRes.text()
+        throw new Error(
+          `Chat HTTP ${chatRes.status}: ${errBody.slice(0, 200)}`
+        )
       }
 
       const reader = chatRes.body.getReader()
       const decoder = new TextDecoder()
+      let buffer = ''
       let full = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value, { stream: true })
-        full += chunk
+
+        buffer += decoder.decode(value, { stream: true })
+        // Process complete SSE events from buffer
+        const lines = buffer.split('\n')
+        // Keep the last incomplete line in buffer
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const content = parseSSEChunk(line)
+          if (content) {
+            full += content
+            setMessages((prev) => {
+              const next = [...prev]
+              next[next.length - 1].content = full
+              return next
+            })
+          }
+        }
+      }
+
+      // Flush any remaining buffer
+      const final = parseSSEChunk(buffer)
+      if (final) {
+        full += final
         setMessages((prev) => {
           const next = [...prev]
           next[next.length - 1].content = full
@@ -93,12 +151,12 @@ export default function HomePage() {
         })
       }
     } catch (err: any) {
-      console.error(err)
+      console.error('Chat pipeline error:', err)
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          content: `⚠️ The ravens failed to return: ${err.message || 'Unknown error'}`,
+          content: `⚠️ The ravens failed to return:\n\n${err.message || 'Unknown error'}`,
         },
       ])
     } finally {
