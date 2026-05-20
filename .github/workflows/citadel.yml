@@ -84,7 +84,7 @@ jobs:
           git add public/extracted/ eval/results.json data/.ingestion_state.json
 
           if git diff --cached --quiet; then
-            echo "🟡 No artifact changes to commit."
+            echo "🟡 No artifact changes to commit.."
           else
             git commit -m "ci: auto-ingest lore, maps & eval metrics [skip ci]"
             git push origin HEAD:${{ github.ref_name }}
