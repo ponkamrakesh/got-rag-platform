@@ -30,7 +30,7 @@ INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "got-rag-platform")
 TARGET_CHARS = 1500
 OVERLAP_CHARS = 300
 BATCH_SIZE = 100
-EMBED_MODEL = "jina-embeddings-v3-base"
+EMBED_MODEL = "jina-embeddings-v3"
 EMBED_DIM = 768
 
 
