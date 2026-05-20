@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import {
   ArrowLeft,
@@ -10,6 +10,10 @@ import {
   Target,
   Crosshair,
   Scroll,
+  Activity,
+  Play,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -28,6 +32,7 @@ import {
 } from 'recharts'
 
 type EvalDetail = {
+  index: number
   question: string
   answer: string
   ground_truth: string
@@ -39,35 +44,102 @@ type EvalDetail = {
   books_hit: string[]
 }
 
+type EvalSummary = {
+  run_date: string
+  total_questions: number
+  completed: number
+  avg_faithfulness: number
+  avg_relevancy: number
+  avg_context_precision: number
+  avg_context_recall: number
+  avg_latency_seconds: number
+  details: EvalDetail[]
+}
+
 type MetricsPayload = {
   totalVectors: number
-  eval?: {
-    run_date: string
-    total_questions: number
-    avg_faithfulness: number
-    avg_relevancy: number
-    avg_context_precision: number
-    avg_context_recall: number
-    avg_latency_seconds: number
-    details: EvalDetail[]
+  ops: {
+    totalQueriesAllTime: number
+    totalQueries24h: number
+    avgLatencyMs: number
+    avgLatency24hMs: number
+    lastQueryAt: number | null
+    lastQuery: string | null
+    recentQueries: Array<{ t: number; q: string; l: number; c: number }>
   }
+  eval: EvalSummary | null
 }
 
 const COLORS = ['#c0392b', '#f39c12', '#74b9ff', '#a29bfe']
 
 export default function DashboardPage() {
   const [data, setData] = useState<MetricsPayload | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    fetch('/api/metrics')
-      .then((r) => {
-        if (!r.ok) throw new Error('Failed to load metrics')
-        return r.json()
-      })
-      .then((d) => setData(d))
-      .catch((e) => setError(e.message))
+  // Evaluation runner state
+  const [runningEval, setRunningEval] = useState(false)
+  const [evalProgress, setEvalProgress] = useState(0)
+  const [evalError, setEvalError] = useState('')
+
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/metrics', { cache: 'no-store' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      setData(json)
+      setError('')
+    } catch (e: any) {
+      setError(e.message || 'Failed to load metrics')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    fetchMetrics()
+    const interval = setInterval(fetchMetrics, 10000)
+    return () => clearInterval(interval)
+  }, [fetchMetrics])
+
+  const runEvaluation = async () => {
+    setRunningEval(true)
+    setEvalProgress(0)
+    setEvalError('')
+
+    const totalQuestions = 12 // known from eval_dataset.json
+    for (let i = 0; i < totalQuestions; i++) {
+      try {
+        const res = await fetch(`/api/eval/run?index=${i}`, { cache: 'no-store' })
+        if (!res.ok) {
+          const body = await res.text()
+          throw new Error(`Q${i + 1}: HTTP ${res.status} ${body.slice(0, 120)}`)
+        }
+        setEvalProgress(Math.round(((i + 1) / totalQuestions) * 100))
+        // Brief pause to respect rate limits and let UI breathe
+        await new Promise((r) => setTimeout(r, 800))
+      } catch (e: any) {
+        setEvalError(e.message || `Question ${i + 1} failed`)
+        setRunningEval(false)
+        fetchMetrics() // refresh whatever succeeded
+        return
+      }
+    }
+
+    setRunningEval(false)
+    setEvalProgress(100)
+    fetchMetrics() // load fresh eval results
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-iron-900 p-10 text-zinc-400 flex items-center gap-3">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Loading Citadel archives...
+      </div>
+    )
+  }
 
   if (error) {
     return (
@@ -79,14 +151,14 @@ export default function DashboardPage() {
 
   if (!data) {
     return (
-      <div className="min-h-screen bg-iron-900 p-10 text-zinc-400 flex items-center gap-3">
-        <div className="w-5 h-5 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
-        Loading Citadel archives...
+      <div className="min-h-screen bg-iron-900 p-6 text-zinc-500">
+        No data received from metrics endpoint.
       </div>
     )
   }
 
   const ev = data.eval
+  const ops = data.ops
 
   const overallRadar = ev
     ? [
@@ -109,7 +181,7 @@ export default function DashboardPage() {
   const latencyData =
     ev?.details.map((d, i) => ({
       name: `Q${i + 1}`,
-      latency: Number((d.latency_seconds).toFixed(2)),
+      latency: Number(d.latency_seconds.toFixed(2)),
     })) || []
 
   return (
@@ -127,12 +199,12 @@ export default function DashboardPage() {
             Citadel Metrics
           </h1>
           <p className="text-xs md:text-sm text-zinc-500 mt-0.5">
-            RAG Evaluation &amp; Retrieval Analytics
+            Live system telemetry — auto-refreshes every 10s
           </p>
         </div>
       </header>
 
-      {/* Metric cards */}
+      {/* Operational Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
         <MetricCard
           icon={<Database className="w-5 h-5" />}
@@ -141,30 +213,76 @@ export default function DashboardPage() {
           accent="text-ice-400"
         />
         <MetricCard
-          icon={<Clock className="w-5 h-5" />}
-          label="Avg Latency"
-          value={ev ? `${ev.avg_latency_seconds.toFixed(2)}s` : 'N/A'}
-          accent="text-fire-300"
-        />
-        <MetricCard
-          icon={<Shield className="w-5 h-5" />}
-          label="Faithfulness"
-          value={ev ? `${(ev.avg_faithfulness * 100).toFixed(0)}%` : 'N/A'}
+          icon={<Activity className="w-5 h-5" />}
+          label="Queries (24h)"
+          value={String(ops.totalQueries24h)}
           accent="text-emerald-400"
         />
         <MetricCard
-          icon={<Target className="w-5 h-5" />}
-          label="Relevancy"
-          value={ev ? `${(ev.avg_relevancy * 100).toFixed(0)}%` : 'N/A'}
-          accent="text-ice-400"
+          icon={<Clock className="w-5 h-5" />}
+          label="Avg Latency (24h)"
+          value={ops.avgLatency24hMs ? `${ops.avgLatency24hMs}ms` : 'N/A'}
+          accent="text-fire-300"
+        />
+        <MetricCard
+          icon={<Clock className="w-5 h-5" />}
+          label="Avg Latency (all)"
+          value={ops.avgLatencyMs ? `${ops.avgLatencyMs}ms` : 'N/A'}
+          accent="text-zinc-400"
         />
       </div>
 
+      {/* Evaluation Controls */}
+      <div className="bg-iron-800 border border-iron-600 rounded-lg p-4 md:p-5 mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-400 flex items-center gap-2 mb-1">
+            <Shield className="w-4 h-4" />
+            Synthetic Evaluation
+          </h3>
+          <p className="text-xs text-zinc-500">
+            {ev
+              ? `Last run: ${new Date(ev.run_date).toLocaleString()} — ${ev.completed}/${ev.total_questions} questions`
+              : 'No evaluation data yet. Run the golden question suite against the live pipeline.'}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {runningEval && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <div className="w-24 h-2 bg-iron-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-fire-400 transition-all duration-300"
+                  style={{ width: `${evalProgress}%` }}
+                />
+              </div>
+              <span>{evalProgress}%</span>
+            </div>
+          )}
+          <button
+            onClick={runEvaluation}
+            disabled={runningEval}
+            className="flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium bg-fire-500 hover:bg-fire-400 disabled:opacity-50 disabled:cursor-not-allowed text-white transition"
+          >
+            {runningEval ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Play className="w-4 h-4" />
+            )}
+            {runningEval ? 'Running...' : 'Run Evaluation'}
+          </button>
+        </div>
+      </div>
+
+      {evalError && (
+        <div className="bg-iron-800 border border-fire-500/30 rounded-lg p-4 mb-8 flex items-start gap-3 text-fire-300 text-sm">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{evalError}</span>
+        </div>
+      )}
+
       {ev && (
         <>
-          {/* Charts row */}
+          {/* Quality Radar + Per-Question */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
-            {/* Radar */}
             <div className="bg-iron-800 border border-iron-600 rounded-lg p-4 md:p-5">
               <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4 flex items-center gap-2">
                 <Crosshair className="w-4 h-4" />
@@ -195,7 +313,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Per-question bar */}
             <div className="bg-iron-800 border border-iron-600 rounded-lg p-4 md:p-5 lg:col-span-2">
               <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4 flex items-center gap-2">
                 <Scroll className="w-4 h-4" />
@@ -264,11 +381,7 @@ export default function DashboardPage() {
                     {latencyData.map((_, i) => (
                       <Cell
                         key={`cell-${i}`}
-                        fill={
-                          latencyData[i].latency > 3
-                            ? '#c0392b'
-                            : '#f39c12'
-                        }
+                        fill={latencyData[i].latency > 3 ? '#c0392b' : '#f39c12'}
                       />
                     ))}
                   </Bar>
@@ -333,16 +446,51 @@ export default function DashboardPage() {
         </>
       )}
 
-      {!ev && (
+      {!ev && !runningEval && (
         <div className="bg-iron-800 border border-iron-600 rounded-lg p-6 text-center text-zinc-400">
           <Scroll className="w-8 h-8 mx-auto mb-3 opacity-50" />
           <p className="text-sm">
-            No evaluation results found. Run{' '}
-            <code className="bg-iron-700 px-1.5 py-0.5 rounded text-fire-300 text-xs">
-              python scripts/run_eval.py
-            </code>{' '}
-            locally and commit <code className="text-zinc-300">eval/results.json</code> to populate this dashboard.
+            No evaluation results found. Click{' '}
+            <span className="text-fire-300 font-semibold">Run Evaluation</span>{' '}
+            above to execute the golden question suite against the live RAG pipeline.
           </p>
+        </div>
+      )}
+
+      {/* Recent Query Log */}
+      {ops.recentQueries.length > 0 && (
+        <div className="mt-8 bg-iron-800 border border-iron-600 rounded-lg overflow-hidden">
+          <div className="px-4 md:px-5 py-3 border-b border-iron-600 bg-iron-700/50">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+              Recent Live Queries
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-iron-700/40 text-zinc-400 text-left">
+                <tr>
+                  <th className="px-4 py-2 font-semibold">Query</th>
+                  <th className="px-4 py-2 font-semibold text-center">Latency</th>
+                  <th className="px-4 py-2 font-semibold text-center">Chunks</th>
+                  <th className="px-4 py-2 font-semibold text-right">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-iron-600">
+                {ops.recentQueries.map((q, i) => (
+                  <tr key={i} className="hover:bg-iron-700/30 transition">
+                    <td className="px-4 py-2 text-zinc-300 max-w-sm truncate">
+                      {q.q}
+                    </td>
+                    <td className="px-4 py-2 text-center text-zinc-300">{q.l}ms</td>
+                    <td className="px-4 py-2 text-center text-zinc-300">{q.c}</td>
+                    <td className="px-4 py-2 text-right text-zinc-500">
+                      {new Date(q.t).toLocaleTimeString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
