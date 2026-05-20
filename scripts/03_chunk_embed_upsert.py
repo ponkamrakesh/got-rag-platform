@@ -1,7 +1,7 @@
 """
 03_chunk_embed_upsert.py
 Chunk text (no word unturned). Embed with Jina AI (free tier). Upsert to Pinecone.
-Uses recursive character chunking with overlap.
+Respects Jina's 100K tokens/min rate limit via small batches + sleep + retry.
 """
 
 import json
@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import List, Dict, Any
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from pinecone import Pinecone, ServerlessSpec
 from tqdm import tqdm
 
@@ -21,7 +21,7 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 # Jina AI embeddings — OpenAI-compatible endpoint, free tier
 JINA_CLIENT = OpenAI(
     base_url="https://api.jina.ai/v1",
-    api_key=os.getenv("JINA_API_KEY", ""),  # works without key for low volume
+    api_key=os.getenv("JINA_API_KEY", ""),
 )
 
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -29,9 +29,11 @@ INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "got-rag-platform")
 
 TARGET_CHARS = 1500
 OVERLAP_CHARS = 300
-BATCH_SIZE = 100
+BATCH_SIZE = 8           # 🔒 Jina free tier: 100K tok/min. 8 chunks × 1500 ≈ 12K safe.
+SLEEP_SECONDS = 1.5      # breathing room between batches
 EMBED_MODEL = "jina-embeddings-v3"
-EMBED_DIM = 768
+EMBED_DIM = 1024
+MAX_RETRIES = 5
 
 
 def ensure_index():
@@ -46,7 +48,11 @@ def ensure_index():
         )
         time.sleep(20)
     else:
-        print(f"✅ Index {INDEX_NAME} exists.")
+        desc = pc.describe_index(INDEX_NAME)
+        if desc.dimension != EMBED_DIM:
+            print(f"⚠️  Index dim={desc.dimension} != {EMBED_DIM}. Delete & re-run 04_setup_pinecone.py")
+            sys.exit(1)
+        print(f"✅ Index {INDEX_NAME} exists with correct dim={EMBED_DIM}.")
 
 
 def recursive_split(text: str, target: int, overlap: int) -> List[str]:
@@ -131,19 +137,39 @@ def to_id(name: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in name).lower()[:40]
 
 
-def embed_batch(texts: List[str]) -> List[List[float]]:
-    resp = JINA_CLIENT.embeddings.create(input=texts, model=EMBED_MODEL)
-    return [d.embedding for d in resp.data]
+def embed_batch_with_retry(texts: List[str]) -> List[List[float]]:
+    """Call Jina with exponential backoff on 429 rate limits."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            resp = JINA_CLIENT.embeddings.create(input=texts, model=EMBED_MODEL)
+            return [d.embedding for d in resp.data]
+        except RateLimitError as e:
+            wait = min(2 ** attempt, 60)  # 2, 4, 8, 16, 32 seconds
+            print(f"⚠️  Jina rate limit (attempt {attempt}/{MAX_RETRIES}). Sleeping {wait}s...")
+            time.sleep(wait)
+        except Exception as e:
+            print(f"❌ Embedding error: {e}")
+            raise
+    raise RuntimeError("Max retries exceeded on Jina rate limit")
 
 
 def upsert_chunks(all_chunks: List[Dict]):
     ensure_index()
     index = pc.Index(INDEX_NAME)
-    print(f"\n🚀 Upserting {len(all_chunks)} chunks to Pinecone...")
-    for i in tqdm(range(0, len(all_chunks), BATCH_SIZE), desc="Upsert batches"):
+    total_batches = (len(all_chunks) + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"\n🚀 Upserting {len(all_chunks)} chunks in {total_batches} batches (size={BATCH_SIZE}, sleep={SLEEP_SECONDS}s)...")
+
+    for i in tqdm(range(0, len(all_chunks), BATCH_SIZE), desc="Upsert batches", total=total_batches):
         batch = all_chunks[i:i + BATCH_SIZE]
         texts = [c["text"] for c in batch]
-        vectors = embed_batch(texts)
+
+        vectors = embed_batch_with_retry(texts)
+
+        # Defensive dimension check
+        if vectors and len(vectors[0]) != EMBED_DIM:
+            print(f"❌ FATAL: Embedding dimension {len(vectors[0])} != index dimension {EMBED_DIM}")
+            sys.exit(1)
+
         upserts = []
         for c, vec in zip(batch, vectors):
             metadata = {
@@ -157,7 +183,13 @@ def upsert_chunks(all_chunks: List[Dict]):
                 "chunk_index": c["chunk_index"],
             }
             upserts.append({"id": c["id"], "values": vec, "metadata": metadata})
+
         index.upsert(vectors=upserts, namespace="")
+
+        # Rate-limit breathing room
+        if i + BATCH_SIZE < len(all_chunks):
+            time.sleep(SLEEP_SECONDS)
+
     print("✅ Upsert complete.")
 
 
