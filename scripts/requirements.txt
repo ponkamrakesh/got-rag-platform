@@ -1,6 +1,6 @@
 PyMuPDF>=1.24.0
 openai>=1.30.0
-pinecone-client>=5.0.0
+pinecone>=5.0.0
 tiktoken>=0.7.0
 python-dotenv>=1.0.0
 tqdm>=4.66.0
