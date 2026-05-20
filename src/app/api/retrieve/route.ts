@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { openai } from '@/lib/openai'
+import { jina } from '@/lib/clients'
 import { index } from '@/lib/pinecone'
 
 export const maxDuration = 60
@@ -11,14 +11,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing query' }, { status: 400 })
     }
 
-    // 1. Embed query
-    const embedRes = await openai.embeddings.create({
+    // Embed via Jina AI (free tier, OpenAI-compatible)
+    const embedRes = await jina.embeddings.create({
       input: query,
-      model: 'text-embedding-3-small',
+      model: 'jina-embeddings-v3-base',
     })
     const vector = embedRes.data[0].embedding
 
-    // 2. Pinecone retrieval
     const filter: Record<string, any> = {}
     if (bookFilter) {
       filter.book = { $eq: bookFilter }
@@ -32,7 +31,6 @@ export async function POST(req: NextRequest) {
     })
 
     const chunks = (results.matches || []).map((m: any) => m.metadata)
-
     return NextResponse.json({ chunks })
   } catch (err: any) {
     console.error('Retrieve error:', err)
