@@ -21,14 +21,19 @@ export async function GET() {
       lastQuery: string
     }>('citadel:ops:summary')
 
-    const rawQueryLogs = await safeKvLrange<string>('citadel:ops:queries', 0, 49)
+    const rawQueryLogs = await safeKvLrange<any>('citadel:ops:queries', 0, 49)
+    // Handle both auto-parsed objects (Upstash) and raw strings
     const queryLogs = rawQueryLogs
       .map((s) => {
-        try {
-          return JSON.parse(s)
-        } catch {
-          return null
+        if (typeof s === 'string') {
+          try {
+            return JSON.parse(s)
+          } catch {
+            return null
+          }
         }
+        if (s && typeof s === 'object') return s
+        return null
       })
       .filter(Boolean)
 
