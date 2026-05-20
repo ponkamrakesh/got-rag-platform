@@ -1,8 +1,6 @@
 """
 run_eval.py
-Batch evaluation of the RAG pipeline using the golden eval dataset.
-Computes: Context Precision, Context Recall, Answer Relevancy, Faithfulness, Latency.
-Outputs: eval/results.json (commit this to the repo so the Vercel dashboard can read it).
+Batch evaluation using Groq (free-tier LLM) and Jina AI (free-tier embeddings).
 """
 import json
 import os
@@ -17,18 +15,29 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 EVAL_DATASET = PROJECT_ROOT / "eval" / "eval_dataset.json"
 RESULTS_PATH = PROJECT_ROOT / "eval" / "results.json"
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Jina AI — free embeddings
+jina_client = OpenAI(
+    base_url="https://api.jina.ai/v1",
+    api_key=os.getenv("JINA_API_KEY", ""),
+)
+
+# Groq — free-tier fast LLM
+groq_client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=os.getenv("GROQ_API_KEY"),
+)
+
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "got-rag")
+INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "got-rag-platform")
 index = pc.Index(INDEX_NAME)
 
-EMBED_MODEL = "text-embedding-3-small"
-LLM_MODEL = "gpt-4o-mini"
+EMBED_MODEL = "jina-embeddings-v3-base"
+LLM_MODEL = "llama-3.1-8b-instant"
 TOP_K = 8
 
 
 def embed(text: str) -> List[float]:
-    return client.embeddings.create(input=[text], model=EMBED_MODEL).data[0].embedding
+    return jina_client.embeddings.create(input=[text], model=EMBED_MODEL).data[0].embedding
 
 
 def retrieve(query: str) -> List[Dict]:
@@ -45,7 +54,7 @@ def generate_answer(question: str, contexts: List[str]) -> str:
         f"Context:\n{ctx_block}\n\n"
         f"Question: {question}\n\nAnswer concisely and accurately:"
     )
-    resp = client.chat.completions.create(
+    resp = groq_client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
@@ -55,7 +64,6 @@ def generate_answer(question: str, contexts: List[str]) -> str:
 
 
 def llm_judge(metric: str, question: str, answer: str, contexts: List[str], ground_truth: str) -> float:
-    """Returns 0.0 - 1.0 score via LLM-as-a-Judge."""
     ctx_block = "\n".join(contexts)[:4000]
     rubrics = {
         "faithfulness": (
@@ -80,7 +88,7 @@ def llm_judge(metric: str, question: str, answer: str, contexts: List[str], grou
         ),
     }
     prompt = rubrics[metric]
-    resp = client.chat.completions.create(
+    resp = groq_client.chat.completions.create(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.0,
@@ -95,11 +103,15 @@ def llm_judge(metric: str, question: str, answer: str, contexts: List[str], grou
 
 
 def run():
+    if not os.getenv("GROQ_API_KEY"):
+        print("❌ Set GROQ_API_KEY to run evaluation.")
+        return
+
     with open(EVAL_DATASET, "r", encoding="utf-8") as f:
         dataset = json.load(f)
 
     results = []
-    print(f"🔍 Evaluating {len(dataset)} questions...")
+    print(f"🔍 Evaluating {len(dataset)} questions via Groq + Jina...")
     for item in dataset:
         q = item["question"]
         gt = item["ground_truth"]
