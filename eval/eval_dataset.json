@@ -1,0 +1,74 @@
+[
+  {
+    "question": "Who are the biological parents of Jon Snow as revealed in the books?",
+    "ground_truth": "Rhaegar Targaryen and Lyanna Stark.",
+    "expected_books": ["A Game of Thrones", "A Dance with Dragons"],
+    "difficulty": "hard"
+  },
+  {
+    "question": "Describe the lands beyond the Wall and what dangers they contain.",
+    "ground_truth": "Haunted forest, frozen shores, Thenn, Hardhome; dangers include wildlings, giants, wights, Others (White Walkers), and extreme cold.",
+    "expected_books": ["A Game of Thrones", "A Storm of Swords", "A Dance with Dragons"],
+    "difficulty": "medium"
+  },
+  {
+    "question": "Where is Vaes Dothrak located and what is its significance to the Dothraki?",
+    "ground_truth": "Beneath the Mother of Mountains, beside a lake called the Womb of the World. It is the only Dothraki city, forbidden to shed blood, and a gathering place for khalasars.",
+    "expected_books": ["A Game of Thrones"],
+    "difficulty": "medium"
+  },
+  {
+    "question": "What occurs during the Red Wedding and which major houses and characters are involved?",
+    "ground_truth": "A massacre orchestrated by House Frey and House Bolton against House Stark. Robb Stark, Catelyn Stark, and many northmen are murdered under guest right at the Twins.",
+    "expected_books": ["A Storm of Swords"],
+    "difficulty": "easy"
+  },
+  {
+    "question": "How is Tyrion Lannister physically described in the books?",
+    "ground_truth": "A dwarf with stunted legs, a jutting forehead, mismatched eyes (one green, one black), a squashed nose, and patchy blond-and-black hair after his injuries at the Blackwater.",
+    "expected_books": ["A Game of Thrones", "A Storm of Swords"],
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the lineage from Aegon the Conqueror to Daenerys Targaryen?",
+    "ground_truth": "Aegon I -> Aenys I -> Jaehaerys I -> Baelon -> Viserys I -> Aerys II (the Mad King) -> Daenerys. Includes intermarriages and civil war (Dance of the Dragons).",
+    "expected_books": ["A Game of Thrones", "The World of Ice & Fire"],
+    "difficulty": "hard"
+  },
+  {
+    "question": "Describe the map of Westeros and the major regions from north to south.",
+    "ground_truth": "The Wall and lands beyond in the far north; the North (Winterfell); the Riverlands; the Vale; the Westerlands (Lannisport, Casterly Rock); the Reach (Highgarden); the Stormlands; Dorne in the far south; the Crownlands (King's Landing) in the center-east.",
+    "expected_books": ["A Game of Thrones"],
+    "difficulty": "easy"
+  },
+  {
+    "question": "What is the significance of Azor Ahai and Lightbringer in the prophecies?",
+    "ground_truth": "Azor Ahai is a legendary hero who forged Lightbringer by tempering it in his wife Nissa Nissa's heart, sacrificing love to save the world from darkness. Prophecy says he will be reborn.",
+    "expected_books": ["A Clash of Kings", "A Storm of Swords", "A Dance with Dragons"],
+    "difficulty": "medium"
+  },
+  {
+    "question": "Who are the members of the Kingsguard during Robert Baratheon's reign and how do they change?",
+    "ground_truth": "Lord Commander Barristan Selmy, Jaime Lannister, and others including Boros Blount, Meryn Trant, Preston Greenfield, Arys Oakheart, Mandon Moore. They shift allegiance to Joffrey after Robert's death.",
+    "expected_books": ["A Game of Thrones", "A Clash of Kings"],
+    "difficulty": "hard"
+  },
+  {
+    "question": "What creatures and races inhabit the world of Ice and Fire, especially those not seen in the Seven Kingdoms?",
+    "ground_truth": "Giants, Children of the Forest, mammoths, unicorns, basilisks, manticores, shadowcats, krakens, dragons, wyverns, and the Others/White Walkers.",
+    "expected_books": ["A Game of Thrones", "The World of Ice & Fire"],
+    "difficulty": "medium"
+  },
+  {
+    "question": "Explain the concept of guest right and its importance in the culture of Westeros.",
+    "ground_truth": "A sacred tradition; once bread and salt are shared, host and guest are protected. Violating it is a monstrous sin, as seen in the Red Wedding and at the Wall with the mutineers.",
+    "expected_books": ["A Game of Thrones", "A Storm of Swords", "A Dance with Dragons"],
+    "difficulty": "medium"
+  },
+  {
+    "question": "How does Bran Stark's journey evolve and what powers does he develop?",
+    "ground_truth": "Falls and becomes crippled; discovers warging into Summer and later Hodor. Guided by Jojen and Meera Reed to the cave of the Three-Eyed Crow (Bloodraven), where he learns greenseeing through weirwoods.",
+    "expected_books": ["A Game of Thrones", "A Clash of Kings", "A Storm of Swords", "A Dance with Dragons"],
+    "difficulty": "medium"
+  }
+]
