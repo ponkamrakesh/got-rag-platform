@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server'
-import { groq } from '@/lib/clients'
 
 export const maxDuration = 60
 
@@ -9,6 +8,13 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(messages) || !Array.isArray(sources)) {
       return new Response(JSON.stringify({ error: 'Invalid body' }), {
         status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (!process.env.GROQ_API_KEY) {
+      return new Response(JSON.stringify({ error: 'GROQ_API_KEY not configured' }), {
+        status: 500,
         headers: { 'Content-Type': 'application/json' },
       })
     }
@@ -31,35 +37,51 @@ export async function POST(req: NextRequest) {
       `CONTEXT SECTIONS:\n${contextText}\n\n` +
       `Now answer the user's question.`
 
-    // Groq streaming — blazing fast on LPU
-    const stream = await groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
-      messages: [{ role: 'system', content: systemPrompt }, ...messages.slice(-6)],
-      temperature: 0.25,
-      max_tokens: 900,
-      stream: true,
-    })
+    const groqMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages.slice(-6),
+    ]
 
-    const encoder = new TextEncoder()
-    const readable = new ReadableStream({
-      async start(controller) {
-        for await (const part of stream) {
-          const content = part.choices[0]?.delta?.content || ''
-          if (content) {
-            controller.enqueue(encoder.encode(content))
-          }
-        }
-        controller.close()
+    // === GROQ STREAMING via raw fetch (OpenAI-compatible endpoint) ===
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: groqMessages,
+        temperature: 0.25,
+        max_tokens: 900,
+        stream: true,
+      }),
     })
 
-    return new Response(readable, {
+    if (!groqRes.ok) {
+      const errText = await groqRes.text()
+      return new Response(
+        JSON.stringify({ error: `Groq error: ${groqRes.status} ${errText.slice(0, 200)}` }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (!groqRes.body) {
+      return new Response(
+        JSON.stringify({ error: 'Groq returned empty stream body' }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Proxy the SSE stream directly — no parsing needed
+    return new Response(groqRes.body, {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       },
     })
+
   } catch (err: any) {
     console.error('Chat error:', err)
     return new Response(JSON.stringify({ error: err.message || 'Internal error' }), {
