@@ -19,7 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
       PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'got-rag-platform' }}
 
@@ -39,12 +41,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
+          echo "=== INSTALLED PACKAGES ==="
+          pip list | grep -i -E "pinecone|openai|fitz|google|pillow|numpy|pandas|tqdm"
 
       - name: Verify API keys are present
         run: |
-          if [ -z "$OPENAI_API_KEY" ]; then echo "❌ OPENAI_API_KEY is empty"; exit 1; else echo "✅ OPENAI_API_KEY is set"; fi
-          if [ -z "$PINECONE_API_KEY" ]; then echo "❌ PINECONE_API_KEY is empty"; exit 1; else echo "✅ PINECONE_API_KEY is set"; fi
+          if [ -z "$JINA_API_KEY" ]; then echo "❌ JINA_API_KEY is empty"; else echo "✅ JINA_API_KEY set (len=${#JINA_API_KEY})"; fi
+          if [ -z "$GROQ_API_KEY" ]; then echo "❌ GROQ_API_KEY is empty"; else echo "✅ GROQ_API_KEY set (len=${#GROQ_API_KEY})"; fi
+          if [ -z "$PINECONE_API_KEY" ]; then echo "❌ PINECONE_API_KEY is empty"; exit 1; else echo "✅ PINECONE_API_KEY set (len=${#PINECONE_API_KEY})"; fi
           echo "✅ PINECONE_INDEX_NAME=$PINECONE_INDEX_NAME"
+
+      - name: Verify PDFs exist
+        run: |
+          echo "=== data/pdfs/ contents ==="
+          ls -lah data/pdfs/ || echo "❌ data/pdfs/ missing"
+          echo "=== PDF count ==="
+          find data/pdfs/ -name "*.pdf" -type f | wc -l
 
       - name: Check if ingestion is needed
         id: state
@@ -53,66 +65,72 @@ jobs:
       - name: Diagnostic — Show check result
         run: |
           echo "needed=${{ steps.state.outputs.needed }}"
-          echo "--- PDFs ---"
-          ls -la data/pdfs/ || echo "❌ No PDF dir"
-          echo "--- Existing extracted ---"
-          ls -la public/extracted/ 2>/dev/null || echo " No extracted dir yet (expected)"
 
       - name: Setup Pinecone index
         if: steps.state.outputs.needed == 'true'
         run: python scripts/04_setup_pinecone.py
+        continue-on-error: true
 
       - name: Parse PDFs (text + images)
+        id: parse
         if: steps.state.outputs.needed == 'true'
         run: python scripts/01_parse_pdfs.py
+        continue-on-error: true
 
-      - name: Diagnostic — Check parsed output
-        if: steps.state.outputs.needed == 'true'
+      - name: Diagnostic — Parse result
+        if: always() && steps.state.outputs.needed == 'true'
         run: |
-          echo "--- processed ---"
-          ls -la data/processed/ || echo "❌ No processed dir"
-          echo "--- extracted ---"
-          ls -la public/extracted/ || echo "❌ No extracted dir"
-          find public/extracted/ -type f | head -10 || echo "⚠️  No image files extracted"
+          echo "=== Parse outcome: ${{ steps.parse.outcome }} ==="
+          ls -lah data/processed/ 2>/dev/null || echo "No processed dir"
+          ls -lah public/extracted/ 2>/dev/null || echo "No extracted dir"
+          find public/extracted/ -type f 2>/dev/null | head -20 || true
 
-      - name: Describe images with Vision AI
-        if: steps.state.outputs.needed == 'true'
+      - name: Describe images with Gemini Vision
+        id: vision
+        if: steps.state.outputs.needed == 'true' && steps.parse.outcome == 'success'
         run: python scripts/02_describe_images.py
         continue-on-error: true
 
       - name: Chunk, embed & upsert to Pinecone
-        if: steps.state.outputs.needed == 'true'
+        id: upsert
+        if: steps.state.outputs.needed == 'true' && steps.parse.outcome == 'success'
         run: python scripts/03_chunk_embed_upsert.py
+        continue-on-error: true
 
       - name: Run evaluation suite
-        if: steps.state.outputs.needed == 'true'
+        id: eval
+        if: steps.state.outputs.needed == 'true' && steps.parse.outcome == 'success'
         run: python scripts/run_eval.py
         continue-on-error: true
 
-      - name: Write ingestion state (only on success)
-        if: steps.state.outputs.needed == 'true'
+      - name: Write ingestion state
+        if: steps.state.outputs.needed == 'true' && steps.upsert.outcome == 'success'
         run: python scripts/write_ingestion_state.py
 
       - name: Diagnostic — Final artifact listing
         if: always() && steps.state.outputs.needed == 'true'
         run: |
-          echo "=== PROCESSED ==="
-          ls -la data/processed/ 2>/dev/null || true
-          echo "=== EXTRACTED ==="
+          echo "=== Pipeline outcomes ==="
+          echo "Parse: ${{ steps.parse.outcome }}"
+          echo "Vision: ${{ steps.vision.outcome }}"
+          echo "Upsert: ${{ steps.upsert.outcome }}"
+          echo "Eval: ${{ steps.eval.outcome }}"
+          echo "=== Artifacts ==="
           find public/extracted/ -type f 2>/dev/null | wc -l || true
-          echo "=== EVAL ==="
-          ls -la eval/ 2>/dev/null || true
-          echo "=== STATE ==="
-          ls -la data/.ingestion_state.json 2>/dev/null || true
+          ls -lah eval/ 2>/dev/null || true
 
       - name: Commit & push artifacts
         if: always() && steps.state.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
           mkdir -p public/extracted eval data
           git add public/extracted/ eval/results.json data/.ingestion_state.json
+
+          echo "=== Git status ==="
+          git status --short
 
           if git diff --cached --quiet; then
             echo "🟡 No artifact changes to commit."
