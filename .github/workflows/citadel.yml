@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ingest:
     runs-on: ubuntu-latest
@@ -23,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,27 +40,52 @@ jobs:
 
       - name: Check if ingestion is needed
         id: state
-        env:
-          GITHUB_OUTPUT: ${{ github.output }}
         run: python scripts/check_ingestion_needed.py
+
+      - name: Diagnostic — Show state
+        run: |
+          echo "needed=${{ steps.state.outputs.needed }}"
+          ls -la data/pdfs/ || echo "No PDF dir"
+          ls -la public/extracted/ || echo "No extracted dir yet"
 
       - name: Run full ingestion pipeline
         if: steps.state.outputs.needed == 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'got-rag' }}
+          PINECONE_INDEX_NAME: ${{ vars.PINECONE_INDEX_NAME || 'got-rag-platform' }}
         run: python scripts/run_all.py
+
+      - name: Write ingestion state on success
+        if: steps.state.outputs.needed == 'true'
+        run: python scripts/write_ingestion_state.py
+
+      - name: Diagnostic — List generated artifacts
+        if: steps.state.outputs.needed == 'true'
+        run: |
+          echo "=== PROCESSED ==="
+          ls -la data/processed/ || echo "No processed dir"
+          echo "=== EXTRACTED ==="
+          find public/extracted/ -type f | head -20 || echo "No extracted files"
+          echo "=== EVAL ==="
+          ls -la eval/ || echo "No eval dir"
+          echo "=== STATE ==="
+          ls -la data/.ingestion_state.json || echo "No state file"
 
       - name: Commit & push artifacts
         if: steps.state.outputs.needed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Ensure directories exist so git add doesn't crash on missing paths
+          mkdir -p public/extracted eval data
+
           git add public/extracted/ eval/results.json data/.ingestion_state.json
+
           if git diff --cached --quiet; then
-            echo "No artifact changes to commit."
+            echo "🟡 No artifact changes to commit."
           else
             git commit -m "ci: auto-ingest lore, maps & eval metrics [skip ci]"
-            git push
+            git push origin HEAD:${{ github.ref_name }}
           fi
