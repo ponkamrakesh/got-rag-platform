@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { openai } from '@/lib/openai'
+import { groq } from '@/lib/clients'
 
 export const maxDuration = 60
 
@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
       `CONTEXT SECTIONS:\n${contextText}\n\n` +
       `Now answer the user's question.`
 
-    const stream = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    // Groq streaming — blazing fast on LPU
+    const stream = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
       messages: [{ role: 'system', content: systemPrompt }, ...messages.slice(-6)],
       temperature: 0.25,
       max_tokens: 900,
