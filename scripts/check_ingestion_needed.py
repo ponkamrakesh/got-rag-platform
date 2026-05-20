@@ -1,8 +1,8 @@
 """
 check_ingestion_needed.py
-Compares MD5 hashes of all PDFs against the last known state.
-Only triggers a full (expensive) OpenAI pipeline if books actually changed.
-Also forces a run if extracted images or eval results are missing (e.g., fresh clone).
+Compares MD5 hashes of all PDFs against the last KNOWN GOOD state
+(stored only AFTER a successful pipeline run).
+Forces a run if extracted images or eval results are missing.
 Writes GitHub Actions step output if running in CI.
 """
 
@@ -27,6 +27,9 @@ def set_output(name: str, value: str) -> None:
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
             fh.write(f"{name}={value}\n")
+    # Also print for human readability in logs
+    print(f"::set-output name={name}::{value}")
+    print(f"OUTPUT {name}={value}")
 
 
 def main():
@@ -44,31 +47,40 @@ def main():
 
     current = {p.name: md5(p) for p in pdfs}
     needed = True
+    reason = "First run or PDFs changed"
 
+    # Compare against LAST SUCCESSFUL state (only written by the commit step)
     if STATE_FILE.exists():
-        previous = json.loads(STATE_FILE.read_text())
-        if previous == current:
-            needed = False
+        try:
+            previous = json.loads(STATE_FILE.read_text())
+            if previous == current:
+                needed = False
+                reason = "PDFs unchanged"
+        except Exception:
+            needed = True
+            reason = "Corrupt state file"
 
-    # Force-run if artifacts are missing (fresh clone, partial checkout, etc.)
+    # Force-run if required artifacts are missing (fresh clone, CI wipe, etc.)
     if not needed:
         extracted = list(Path("public/extracted").rglob("*.png")) if Path("public/extracted").exists() else []
         if not extracted:
-            print("📦 PDFs unchanged, but extracted images missing. Forcing run.")
             needed = True
+            reason = "PDFs unchanged, but extracted images missing"
         elif not Path("eval/results.json").exists():
-            print("📊 PDFs unchanged, but eval results missing. Forcing run.")
             needed = True
+            reason = "PDFs unchanged, but eval results missing"
         else:
-            print("🟢 PDFs unchanged & artifacts present. Skipping ingestion.")
+            reason = "PDFs unchanged & all artifacts present"
+
+    print(f"📊 Ingestion check: {reason}")
+    print(f"   PDFs found: {[p.name for p in pdfs]}")
 
     if needed:
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps(current, indent=2))
         set_output("needed", "true")
         print("🔥 Ingestion NEEDED.")
     else:
         set_output("needed", "false")
+        print("🟢 Ingestion SKIPPED.")
 
     sys.exit(0)
 
