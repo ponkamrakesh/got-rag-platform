@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { openai } from '@/lib/openai'
 
-export const maxDuration = 120
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   try {
