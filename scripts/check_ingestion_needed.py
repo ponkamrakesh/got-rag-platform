@@ -1,9 +1,7 @@
 """
 check_ingestion_needed.py
-Compares MD5 hashes of all PDFs against the last KNOWN GOOD state
-(stored only AFTER a successful pipeline run).
-Forces a run if extracted images or eval results are missing.
-Writes GitHub Actions step output if running in CI.
+Compares MD5 hashes of all PDFs against the last KNOWN GOOD state.
+Writes to GITHUB_OUTPUT file (the only supported method in modern GitHub Actions).
 """
 
 import hashlib
@@ -24,12 +22,12 @@ def md5(path: Path) -> str:
 
 
 def set_output(name: str, value: str) -> None:
+    """Write to GITHUB_OUTPUT environment file. NEVER use deprecated ::set-output."""
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
             fh.write(f"{name}={value}\n")
-    # Also print for human readability in logs
-    print(f"::set-output name={name}::{value}")
-    print(f"OUTPUT {name}={value}")
+    # Echo for human-readable logs only
+    print(f"✅ OUTPUT {name}={value}")
 
 
 def main():
@@ -49,7 +47,6 @@ def main():
     needed = True
     reason = "First run or PDFs changed"
 
-    # Compare against LAST SUCCESSFUL state (only written by the commit step)
     if STATE_FILE.exists():
         try:
             previous = json.loads(STATE_FILE.read_text())
@@ -60,7 +57,7 @@ def main():
             needed = True
             reason = "Corrupt state file"
 
-    # Force-run if required artifacts are missing (fresh clone, CI wipe, etc.)
+    # Force-run if required artifacts are missing
     if not needed:
         extracted = list(Path("public/extracted").rglob("*.png")) if Path("public/extracted").exists() else []
         if not extracted:
@@ -75,13 +72,8 @@ def main():
     print(f"📊 Ingestion check: {reason}")
     print(f"   PDFs found: {[p.name for p in pdfs]}")
 
-    if needed:
-        set_output("needed", "true")
-        print("🔥 Ingestion NEEDED.")
-    else:
-        set_output("needed", "false")
-        print("🟢 Ingestion SKIPPED.")
-
+    set_output("needed", "true" if needed else "false")
+    print(f"{'🔥 Ingestion NEEDED.' if needed else '🟢 Ingestion SKIPPED.'}")
     sys.exit(0)
 
 
