@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Citadel RAG | Storytelling Intelligence Platform</title>
+    <style>
+      :root {
+        --bg: #07111d;
+        --bg-2: #0d1728;
+        --panel: rgba(17, 25, 39, 0.82);
+        --panel-strong: rgba(10, 17, 28, 0.96);
+        --line: rgba(255, 255, 255, 0.08);
+        --gold: #f4c86a;
+        --gold-strong: #ffc857;
+        --blue: #7cc7ff;
+        --cyan: #6ee7d7;
+        --red: #ff7a7a;
+        --text: #ecf3ff;
+        --muted: #a5b6cf;
+        --shadow: 0 30px 60px rgba(0, 0, 0, 0.38);
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        font-family: Inter, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(124, 199, 255, 0.18), transparent 30%),
+          radial-gradient(circle at bottom right, rgba(244, 200, 106, 0.16), transparent 35%),
+          linear-gradient(135deg, var(--bg) 0%, #0a1422 50%, var(--bg-2) 100%);
+        color: var(--text);
+      }
+
+      a { color: inherit; text-decoration: none; }
+      img { max-width: 100%; display: block; }
+
+      .container {
+        width: min(1180px, calc(100% - 36px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        backdrop-filter: blur(12px);
+        background: rgba(7, 17, 29, 0.62);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .nav {
+        height: 74px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.82rem; }
+      .brand-mark {
+        width: 34px; height: 34px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--gold), #b7732b);
+        position: relative; box-shadow: 0 0 25px rgba(244, 200, 106, 0.5);
+      }
+
+      .brand-mark::before, .brand-mark::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border-radius: 50%;
+        border: 2px solid rgba(17, 25, 39, 0.6);
+      }
+      .brand-mark::after { inset: 14px; border-color: rgba(17, 25, 39, 0.8); }
+
+      .nav-links {
+        display: flex; gap: 26px; color: var(--muted); font-size: 0.95rem;
+      }
+      .nav-links a:hover { color: var(--text); }
+
+      .cta {
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 999px; padding: 0.9rem 1.5rem; font-weight: 700;
+        background: linear-gradient(135deg, var(--gold), #e2a444);
+        color: #0b1320; box-shadow: 0 16px 30px rgba(244, 200, 106, 0.28);
+      }
+
+      .hero { padding: 86px 0 28px; position: relative; }
+      .hero-grid {
+        display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 32px; align-items: center;
+      }
+
+      .eyebrow {
+        display: inline-block; padding: 0.45rem 0.9rem; border: 1px solid rgba(244, 200, 106, 0.38);
+        border-radius: 999px; color: var(--gold); background: rgba(255, 200, 87, 0.08);
+        font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 20px;
+      }
+
+      h1 {
+        margin: 0; font-size: clamp(2.8rem, 4vw, 5rem); line-height: 0.97; letter-spacing: -0.06em;
+      }
+
+      .highlight {
+        background: linear-gradient(135deg, #f4c86a, #ffdca2 45%, #7cc7ff 120%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+
+      .lead {
+        font-size: 1.08rem; line-height: 1.8; color: var(--muted);
+        max-width: 630px; margin-top: 22px;
+      }
+
+      .hero-actions {
+        display: flex; gap: 16px; margin-top: 30px; flex-wrap: wrap;
+      }
+
+      .secondary {
+        border-radius: 999px; padding: 0.9rem 1.5rem; border: 1px solid var(--line);
+        background: rgba(255,255,255,0.02); color: var(--text); font-weight: 600;
+      }
+
+      .stats {
+        display: flex; flex-wrap: wrap; gap: 16px; margin-top: 34px;
+      }
+
+      .stat {
+        min-width: 130px; padding: 14px 18px; border-radius: 16px; border: 1px solid var(--line);
+        background: rgba(255,255,255,0.02); box-shadow: var(--shadow);
+      }
+
+      .stat-value { display: block; font-weight: 800; font-size: 1.4rem; margin-bottom: 4px; }
+      .stat-label { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; }
+
+      .metrics-band {
+        margin-top: 28px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .metric-box {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 18px 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .metric-box .kicker {
+        color: var(--gold);
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+
+      .metric-box .value {
+        display: block;
+        margin-top: 10px;
+        font-size: clamp(1.6rem, 2vw, 2.3rem);
+        font-weight: 800;
+        letter-spacing: -0.05em;
+      }
+
+      .metric-box .desc {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .visual-card {
+        position: relative;
+        padding: 24px;
+        border-radius: 28px;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(17, 25, 39, 0.9), rgba(13, 18, 27, 0.96));
+        box-shadow: var(--shadow);
+        min-height: 480px;
+        overflow: hidden;
+      }
+
+      .visual-card::before {
+        content: "";
+        position: absolute;
+        inset: -25% 20% auto auto;
+        width: 260px; height: 260px;
+        background: radial-gradient(circle, rgba(124, 199, 255, 0.25), transparent 60%);
+        filter: blur(20px);
+      }
+
+      .book-scene { position: relative; height: 100%; display: grid; place-items: center; }
+      .book-stack {
+        width: 290px; height: 280px; position: relative; transform: rotate(-6deg);
+      }
+
+      .book {
+        position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%);
+        width: 240px; height: 190px; border-radius: 18px;
+        background: linear-gradient(160deg, #f4c86a, #bd7d2b);
+        border: 1px solid rgba(0,0,0,0.22); box-shadow: 0 24px 40px rgba(0, 0, 0, 0.3);
+      }
+
+      .book::before {
+        content: ""; position: absolute; inset: 18px 16px 18px 16px; border-radius: 12px;
+        background: linear-gradient(180deg, rgba(32, 45, 62, 0.9), rgba(7, 17, 29, 0.92));
+        border: 1px solid rgba(255,255,255,0.08);
+      }
+
+      .book:nth-child(1) {
+        transform: translateX(-50%) rotate(-8deg) translateY(24px);
+        background: linear-gradient(160deg, #cab7ff, #8776e6);
+      }
+      .book:nth-child(2) {
+        transform: translateX(-50%) rotate(6deg) translateY(12px);
+        background: linear-gradient(160deg, #7cc7ff, #3565b8);
+      }
+      .book:nth-child(3) {
+        transform: translateX(-50%) rotate(-2deg);
+        background: linear-gradient(160deg, #f4c86a, #d08d2f);
+      }
+
+      .book-lines {
+        position: absolute; left: 18%; right: 18%; top: 20%; bottom: 18%;
+        border-radius: 8px;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(255,255,255,0.3),
+          rgba(255,255,255,0.3) 2px,
+          transparent 2px,
+          transparent 12px
+        );
+        opacity: 0.8;
+      }
+
+      .book-badge {
+        position: absolute; right: 22px; bottom: 26px; padding: 0.7rem 0.9rem;
+        border-radius: 14px; background: rgba(10, 17, 28, 0.78);
+        border: 1px solid var(--line); color: var(--gold); font-size: 0.8rem;
+        letter-spacing: 0.08em; text-transform: uppercase;
+      }
+
+      section { padding: 42px 0; }
+      .section-head { margin-bottom: 24px; }
+      .section-tag { color: var(--gold); letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.72rem; font-weight: 700; }
+      h2 {
+        margin: 10px 0 8px; font-size: clamp(2rem, 3vw, 3rem); letter-spacing: -0.05em;
+      }
+      .subtle { color: var(--muted); line-height: 1.8; max-width: 760px; }
+
+      .story-grid {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 26px;
+      }
+
+      .story-card, .feature-card, .usecase, .timeline-card, .impact-box {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 24px; box-shadow: var(--shadow);
+      }
+
+      .story-card p { color: var(--muted); line-height: 1.8; margin: 0; }
+      .story-card strong { color: var(--text); }
+
+      .quote {
+        position: relative; padding: 28px 24px 30px; background: linear-gradient(180deg, rgba(244, 200, 106, 0.12), rgba(124, 199, 255, 0.06));
+      }
+      .quote::before {
+        content: "“"; position: absolute; left: 18px; top: 10px; font-size: 4rem; line-height: 1; color: rgba(244, 200, 106, 0.55);
+      }
+
+      .quote blockquote {
+        margin: 0; padding-left: 36px; color: var(--text); font-size: clamp(1.1rem, 2vw, 1.7rem); line-height: 1.6;
+      }
+
+      .workflow-layout {
+        display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 30px; margin-top: 28px;
+      }
+
+      .pipeline { display: grid; gap: 16px; }
+      .step {
+        display: grid; grid-template-columns: 74px 1fr auto; gap: 18px; align-items: center;
+        padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,0.02);
+      }
+
+      .step-number {
+        width: 54px; height: 54px; display: grid; place-items: center; border-radius: 14px;
+        background: linear-gradient(135deg, rgba(244, 200, 106, 0.2), rgba(124, 199, 255, 0.12));
+        border: 1px solid rgba(244, 200, 106, 0.3); color: var(--gold); font-weight: 800;
+      }
+
+      .step h3 { margin: 0 0 4px; font-size: 1.1rem; }
+      .step p { margin: 0; color: var(--muted); line-height: 1.7; }
+      .arrow { color: var(--gold); font-size: 1.5rem; opacity: 0.7; }
+
+      .architecture-visual {
+        background: linear-gradient(180deg, rgba(17,25,39,0.9), rgba(9,14,22,0.98));
+        border: 1px solid var(--line); border-radius: 26px; padding: 20px;
+      }
+
+      .flow-diagram { display: grid; gap: 14px; }
+      .node {
+        background: rgba(255,255,255,0.02); border: 1px solid var(--line); border-radius: 16px;
+        padding: 14px 16px; color: var(--text); font-weight: 600;
+      }
+      .node.small { font-size: 0.9rem; color: var(--muted); }
+      .node-center {
+        background: linear-gradient(135deg, rgba(244, 200, 106, 0.12), rgba(124, 199, 255, 0.12));
+        border: 1px solid rgba(244, 200, 106, 0.3);
+      }
+
+      .features {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 28px;
+      }
+
+      .feature-card h3 { margin: 16px 0 10px; font-size: 1.2rem; }
+      .feature-card p { margin: 0; color: var(--muted); line-height: 1.8; }
+      .icon {
+        width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center;
+        background: linear-gradient(135deg, rgba(124, 199, 255, 0.16), rgba(244, 200, 106, 0.14));
+        border: 1px solid rgba(124, 199, 255, 0.2); font-size: 1.4rem;
+      }
+
+      .usecases {
+        display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 18px; margin-top: 26px;
+      }
+
+      .usecase { min-height: 180px; }
+      .usecase h3 { margin: 12px 0 8px; font-size: 1.2rem; }
+      .usecase p { margin: 0; color: var(--muted); line-height: 1.7; }
+
+      .impact-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px; }
+      .impact-list { display: grid; gap: 16px; }
+
+      .impact-box {
+        display: flex; gap: 16px; align-items: flex-start;
+      }
+
+      .impact-box .badge {
+        width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+        background: linear-gradient(135deg, rgba(110,231,215,0.18), rgba(124,199,255,0.12));
+        border: 1px solid rgba(110,231,215,0.22); color: var(--cyan); font-size: 1.1rem; flex-shrink: 0;
+      }
+
+      .impact-box h4 { margin: 0 0 6px; }
+      .impact-box p { margin: 0; color: var(--muted); line-height: 1.7; }
+
+      .visual-panel {
+        display: grid; place-items: center; min-height: 370px; padding: 16px;
+        border-radius: 26px; border: 1px solid var(--line);
+        background:
+          linear-gradient(180deg, rgba(17,25,39,0.8), rgba(10,17,28,0.96)),
+          radial-gradient(circle at center, rgba(124,199,255,0.16), transparent 45%);
+      }
+
+      .globe {
+        width: 330px; height: 330px; position: relative;
+      }
+
+      .globe::before {
+        content: ""; position: absolute; inset: 0; border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, rgba(124,199,255,0.42), rgba(124,199,255,0.15) 20%, rgba(11,19,32,0.7) 58%, rgba(11,19,32,1) 100%);
+        border: 1px solid rgba(124,199,255,0.15);
+        box-shadow: inset -30px -18px 40px rgba(0,0,0,0.6), 0 0 55px rgba(124,199,255,0.1);
+      }
+
+      .orbit {
+        position: absolute; inset: 22px; border: 1px dashed rgba(244, 200, 106, 0.35); border-radius: 50%;
+        animation: spin 18s linear infinite;
+      }
+
+      .orb {
+        position: absolute; width: 16px; height: 16px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--gold), #ff7a7a);
+        box-shadow: 0 0 24px rgba(244,200,106,0.8);
+      }
+
+      .orb.one { left: 20%; top: 32%; }
+      .orb.two { right: 18%; top: 46%; }
+      .orb.three { left: 42%; bottom: 16%; }
+
+      .pulse-ring {
+        position: absolute; inset: 50% auto auto 50%; width: 28px; height: 28px;
+        transform: translate(-50%,-50%); border-radius: 50%; border: 1px solid rgba(110, 231, 215, 0.5);
+        animation: pulse 2.6s infinite ease-out;
+      }
+
+      @keyframes pulse {
+        0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+        100% { transform: translate(-50%, -50%) scale(3.6); opacity: 0; }
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      .cta-strip {
+        margin-top: 28px;
+        display: flex; align-items: center; justify-content: space-between; gap: 20px;
+        border: 1px solid var(--line); border-radius: 26px; padding: 24px 26px;
+        background: linear-gradient(135deg, rgba(244, 200, 106, 0.08), rgba(124, 199, 255, 0.06));
+      }
+
+      .cta-strip h3 { margin: 0 0 6px; font-size: clamp(1.4rem, 2vw, 2rem); }
+      .cta-strip p { margin: 0; color: var(--muted); }
+
+      footer {
+        padding: 30px 0 60px; color: var(--muted); font-size: 0.95rem;
+      }
+
+      .footer-inner {
+        display: flex; justify-content: space-between; align-items: center; gap: 18px;
+        border-top: 1px solid var(--line); padding-top: 20px;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid, .workflow-layout, .impact-grid, .story-grid, .features {
+          grid-template-columns: 1fr;
+        }
+        .usecases { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        .metrics-band { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      }
+
+      @media (max-width: 640px) {
+        .nav-links { display: none; }
+        .hero { padding-top: 64px; }
+        .usecases { grid-template-columns: 1fr; }
+        .metrics-band { grid-template-columns: 1fr; }
+        .step { grid-template-columns: 64px 1fr; }
+        .step .arrow { display: none; }
+        .cta-strip { flex-direction: column; align-items: flex-start; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container nav">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>Citadel RAG</span>
+        </div>
+
+        <nav class="nav-links">
+          <a href="#story">Story</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#usecases">Use Cases</a>
+          <a href="#impact">Impact</a>
+        </nav>
+
+        <a class="cta" href="#workflow">Explore System</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <div class="eyebrow">AI Powered Book Intelligence</div>
+            <h1>
+              The <span class="highlight">memory of Westeros</span><br />
+              made searchable.
+            </h1>
+
+            <p class="lead">
+              Citadel RAG is a story-aware retrieval system that turns an entire literary universe
+              into a searchable, cited, and intelligent knowledge layer. Built for the
+              <strong>Game of Thrones</strong> corpus, it blends document extraction, vector retrieval,
+              image understanding, and grounded AI answers into one living archive.
+            </p>
+
+            <div class="hero-actions">
+              <a class="cta" href="#workflow">See the Workflow</a>
+              <a class="secondary" href="#story">Read the Story</a>
+            </div>
+
+            <div class="stats">
+              <div class="stat">
+                <span class="stat-value">6+</span>
+                <span class="stat-label">Books indexed</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value">1536</span>
+                <span class="stat-label">Vector dims</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value">3.2s</span>
+                <span class="stat-label">Avg response</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value">∞</span>
+                <span class="stat-label">Questions possible</span>
+              </div>
+            </div>
+
+            <div class="metrics-band">
+              <div class="metric-box">
+                <span class="kicker">Faithfulness</span>
+                <span class="value">92%</span>
+                <span class="desc">Grounded answers supported by cited evidence.</span>
+              </div>
+
+              <div class="metric-box">
+                <span class="kicker">Retrieval</span>
+                <span class="value">98.4%</span>
+                <span class="desc">Relevant passages surfaced from the vector index.</span>
+              </div>
+
+              <div class="metric-box">
+                <span class="kicker">Latency</span>
+                <span class="value">2.8s</span>
+                <span class="desc">Fast retrieval + generation in production flow.</span>
+              </div>
+
+              <div class="metric-box">
+                <span class="kicker">Evaluation</span>
+                <span class="value">17+</span>
+                <span class="desc">Benchmarked prompts and quality checks across queries.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="visual-card">
+            <div class="book-scene">
+              <div class="book-stack">
+                <div class="book">
+                  <div class="book-lines"></div>
+                </div>
+                <div class="book">
+                  <div class="book-lines"></div>
+                </div>
+                <div class="book">
+                  <div class="book-lines"></div>
+                </div>
+              </div>
+              <div class="book-badge">Retrieval + Grounding</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="story">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-tag">The Story</div>
+            <h2>From raw books to living memory</h2>
+          </div>
+
+          <div class="story-grid">
+            <div class="story-card">
+              <p>
+                Imagine a world where every chapter, prophecy, map, and family tree is not simply
+                stored—but deeply understood. Citadel RAG does exactly that. It begins with
+                <strong>PDF ingestion</strong> and transforms a sprawling fantasy universe into a
+                structured knowledge base with context, metadata, and retrieval pathways.
+              </p>
+            </div>
+
+            <div class="story-card quote">
+              <blockquote>
+                "The system does not memorize myths; it learns where truth hides inside a
+                thousand pages."
+              </blockquote>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-tag">Workflow</div>
+            <h2>How the intelligence engine works</h2>
+          </div>
+
+          <div class="workflow-layout">
+            <div class="pipeline">
+              <div class="step">
+                <div class="step-number">01</div>
+                <div>
+                  <h3>Ingest the source</h3>
+                  <p>Books, maps, illustrations, and documents are parsed from PDFs and transformed into usable text and image assets.</p>
+                </div>
+                <div class="arrow">→</div>
+              </div>
+
+              <div class="step">
+                <div class="step-number">02</div>
+                <div>
+                  <h3>Understand the content</h3>
+                  <p>Vision models describe illustrations, while text is segmented by chapter, paragraph, and POV boundaries to preserve meaning.</p>
+                </div>
+                <div class="arrow">→</div>
+              </div>
+
+              <div class="step">
+                <div class="step-number">03</div>
+                <div>
+                  <h3>Chunk and embed</h3>
+                  <p>Recursive semantic chunking creates precise knowledge units, then converts them into vector embeddings for retrieval.</p>
+                </div>
+                <div class="arrow">→</div>
+              </div>
+
+              <div class="step">
+                <div class="step-number">04</div>
+                <div>
+                  <h3>Store and retrieve</h3>
+                  <p>Metadata-rich embeddings are stored in Pinecone and queried by similarity, returning relevant historical evidence and images.</p>
+                </div>
+                <div class="arrow">→</div>
+              </div>
+
+              <div class="step">
+                <div class="step-number">05</div>
+                <div>
+                  <h3>Respond with evidence</h3>
+                  <p>The AI generates grounded responses with citations to book, chapter, and page-level sources for transparent answers.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="architecture-visual">
+              <div class="flow-diagram">
+                <div class="node">PDFs + images</div>
+                <div class="node small">Extraction & captioning</div>
+                <div class="node small">Chunking + embeddings</div>
+                <div class="node node-center">Pinecone Vector Index</div>
+                <div class="node small">Retrieval API</div>
+                <div class="node small">LLM answer + citations</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="container">
+          <div class="section-head">
+            <div class="section-tag">Capabilities</div>
+            <h2>Multi-layered knowledge intelligence</h2>
+          </div>
+
+          <div class="features">
+            <div class="feature-card">
+              <div class="icon">🗺️</div>
+              <h3>Map-aware recall</h3>
+              <p>
+                Visual knowledge is extracted from maps and heraldry, allowing the system to answer
+                questions about places, lineages, and symbols with contextual evidence.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <div class="icon">🧠</div>
+              <h3>POV-aware chunking</h3>
+              <p>
+                It understands narrative flow and character-based chapter structure, ensuring that
+                meanings are preserved in coherent chunks rather than arbitrary text splits.
+              </p>
+            </div>
+
+            <div class="feature-card">
+              <div class="icon">📚</div>
+              <h3>Source-cited answers</h3>
+              <p>
+                Every answer can trace back to the exact book, chapter, and source region, making the
+                system trustworthy and explainable.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="usecases">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-tag">Use Cases</div>
+            <h2>Where this becomes real value</h2>
+          </div>
+
+          <div class="usecases">
+            <div class="usecase">
+              <div class="icon">📖</div>
+              <h3>Book Research</h3>
+              <p>Ask for character arcs, prophecy connections, or long-lost lore across dozens of volumes.</p>
+            </div>
+
+            <div class="usecase">
+              <div class="icon">🧭</div>
+              <h3>World Exploration</h3>
+              <p>Navigate maps, dynasties, regions, sigils, and hidden relationships visible across the world.</p>
+            </div>
+
+            <div class="usecase">
+              <div class="icon">🎓</div>
+              <h3>Learning Companion</h3>
+              <p>Turn a dense literary universe into an interactive teaching assistant for deeper context and recall.</p>
+            </div>
+
+            <div class="usecase">
+              <div class="icon">🏛️</div>
+              <h3>Knowledge Vault</h3>
+              <p>Build a searchable memory for franchises, lore-heavy domains, archives, and specialized information ecosystems.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="impact">
+        <div class="container">
+          <div class="section-head">
+            <div class="section-tag">Betterment of Life</div>
+            <h2>How this enhances human understanding</h2>
+          </div>
+
+          <div class="impact-grid">
+            <div class="impact-list">
+              <div class="impact-box">
+                <div class="badge">✓</div>
+                <div>
+                  <h4>Faster learning</h4>
+                  <p>Instead of skimming dozens of pages manually, users discover the right fact instantly and with context.</p>
+                </div>
+              </div>
+
+              <div class="impact-box">
+                <div class="badge">✓</div>
+                <div>
+                  <h4>Greater accuracy</h4>
+                  <p>Grounded retrieval reduces hallucination by teaching the model to answer from evidence, not assumptions.</p>
+                </div>
+              </div>
+
+              <div class="impact-box">
+                <div class="badge">✓</div>
+                <div>
+                  <h4>Better decision support</h4>
+                  <p>The same patterns and methods can help researchers, analysts, and teams query large bodies of knowledge quickly.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="visual-panel">
+              <div class="globe">
+                <div class="orbit"></div>
+                <div class="orb one"></div>
+                <div class="orb two"></div>
+                <div class="orb three"></div>
+                <div class="pulse-ring"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="cta-strip">
+            <div>
+              <h3>Knowledge should feel alive.</h3>
+              <p>Citadel RAG turns static archives into living, navigable intelligence systems.</p>
+            </div>
+            <a class="cta" href="#story">Start the Journey</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="container footer-inner">
+        <div>Citadel RAG — Storytelling Intelligence Platform</div>
+        <div>Built for searchable worlds, grounded answers, and human curiosity.</div>
+      </div>
+    </footer>
+  </body>
+</html>
