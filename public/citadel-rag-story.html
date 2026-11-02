@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Citadel RAG — Story of Knowledge</title>
+    <style>
+      :root {
+        --bg: #0a0d12;
+        --bg-soft: #111827;
+        --panel: rgba(17, 24, 39, 0.72);
+        --panel-strong: rgba(12, 16, 23, 0.9);
+        --border: rgba(148, 163, 184, 0.22);
+        --gold: #f6c76f;
+        --gold-2: #d89d3b;
+        --fire: #ff7a59;
+        --ember: #ffb36b;
+        --rose: #f472b6;
+        --cyan: #80e9ff;
+        --mint: #7ee7c7;
+        --violet: #a78bfa;
+        --text: #edf3ff;
+        --muted: #9aa9bd;
+        --shadow: rgba(0, 0, 0, 0.38);
+      }
+
+      * { box-sizing: border-box; }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, sans-serif;
+        background:
+          radial-gradient(circle at 15% 20%, rgba(255, 122, 89, 0.18), transparent 20%),
+          radial-gradient(circle at 80% 5%, rgba(167, 139, 250, 0.18), transparent 25%),
+          radial-gradient(circle at 50% 80%, rgba(128, 233, 255, 0.12), transparent 25%),
+          var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        pointer-events: none;
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      .container {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        backdrop-filter: blur(14px);
+        background: rgba(10, 13, 18, 0.58);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 72px;
+        gap: 24px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+        color: #f5efe8;
+      }
+
+      .brand-mark {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--gold), var(--fire));
+        box-shadow: 0 0 18px rgba(246, 199, 111, 0.8);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .nav-links a:hover { color: var(--text); }
+
+      .cta-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.82rem 1.3rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: linear-gradient(135deg, rgba(255,122,89,0.23), rgba(246,199,111,0.16));
+        color: var(--text);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+      }
+
+      .hero {
+        padding: 72px 0 28px;
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 34px;
+        align-items: center;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--gold);
+        font-size: 0.76rem;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 42px;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--gold));
+      }
+
+      h1, h2, h3 {
+        font-family: Georgia, "Times New Roman", serif;
+        margin: 0 0 18px;
+        letter-spacing: 0.04em;
+      }
+
+      h1 {
+        font-size: clamp(2.9rem, 5vw, 5.4rem);
+        line-height: 0.96;
+        margin-top: 20px;
+      }
+
+      .hero-copy p {
+        font-size: 1.08rem;
+        color: var(--muted);
+        max-width: 640px;
+      }
+
+      .cta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin: 28px 0 26px;
+      }
+
+      .primary-btn, .secondary-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem 1.4rem;
+        border-radius: 999px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+      }
+
+      .primary-btn {
+        background: linear-gradient(135deg, var(--gold), var(--fire));
+        color: #100d0c;
+        box-shadow: 0 18px 34px rgba(255, 122, 89, 0.28);
+      }
+
+      .secondary-btn {
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        color: var(--text);
+        background: rgba(255,255,255,0.02);
+      }
+
+      .hero-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        margin-top: 26px;
+      }
+
+      .stat {
+        min-width: 140px;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(17, 24, 39, 0.5);
+        box-shadow: 0 18px 32px rgba(0,0,0,0.16);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 1.7rem;
+        color: var(--text);
+        line-height: 1;
+      }
+
+      .stat span {
+        color: var(--muted);
+        font-size: 0.8rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .art-shell {
+        position: relative;
+        min-height: 520px;
+        border-radius: 32px;
+        background: linear-gradient(180deg, rgba(19,24,33,0.94), rgba(9,12,16,0.96));
+        border: 1px solid rgba(150, 163, 184, 0.18);
+        overflow: hidden;
+        box-shadow: 0 26px 60px rgba(0,0,0,0.38);
+      }
+
+      .art-shell::before, .art-shell::after {
+        content: "";
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(70px);
+        opacity: 0.5;
+      }
+
+      .art-shell::before {
+        width: 200px;
+        height: 200px;
+        background: rgba(255,122,89,0.22);
+        top: 40px;
+        left: 40px;
+      }
+
+      .art-shell::after {
+        width: 220px;
+        height: 220px;
+        background: rgba(128,233,255,0.2);
+        right: 40px;
+        bottom: 30px;
+      }
+
+      .map-wrap {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 26px;
+      }
+
+      svg {
+        width: 100%;
+        height: 100%;
+        max-height: 520px;
+        display: block;
+      }
+
+      .card-panel {
+        background: rgba(17,24,39,0.82);
+        border: 1px solid rgba(148,163,184,0.18);
+        border-radius: 18px;
+        box-shadow: 0 14px 28px rgba(0,0,0,0.22);
+      }
+
+      section {
+        padding: 90px 0;
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 24px;
+        margin-bottom: 28px;
+      }
+
+      .section-head h2 {
+        font-size: clamp(2.2rem, 3vw, 3.5rem);
+        margin-bottom: 0;
+      }
+
+      .section-head p {
+        color: var(--muted);
+        margin: 0;
+        max-width: 560px;
+      }
+
+      .story-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0,1fr));
+        gap: 24px;
+      }
+
+      .story-card {
+        position: relative;
+        padding: 26px 22px;
+        min-height: 220px;
+      }
+
+      .story-card::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(90deg, var(--gold), transparent);
+        opacity: 0.7;
+      }
+
+      .num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(246,199,111,0.18), rgba(255,122,89,0.14));
+        color: var(--gold);
+        font-weight: 800;
+        margin-bottom: 16px;
+      }
+
+      .story-card h3 {
+        font-size: 1.52rem;
+        margin-bottom: 12px;
+      }
+
+      .story-card p {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .workflow {
+        background: linear-gradient(180deg, rgba(15,18,24,0.5), rgba(9,12,16,0.2));
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0,1fr));
+        gap: 20px;
+        margin-top: 22px;
+      }
+
+      .step {
+        position: relative;
+        padding: 22px 18px 18px;
+      }
+
+      .step:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        right: -12px;
+        top: 50%;
+        width: 24px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--gold), transparent);
+      }
+
+      .step-icon {
+        width: 58px;
+        height: 58px;
+        border-radius: 16px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 18px;
+        font-weight: 800;
+        color: var(--bg);
+        background: linear-gradient(135deg, var(--gold), var(--ember));
+        box-shadow: 0 16px 28px rgba(246, 199, 111, 0.2);
+      }
+
+      .step h3 {
+        font-size: 1.08rem;
+        margin-bottom: 10px;
+      }
+
+      .step p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.92rem;
+      }
+
+      .usecase-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0,1fr));
+        gap: 22px;
+      }
+
+      .usecase-card {
+        padding: 22px 18px;
+      }
+
+      .usecase-card .icon {
+        width: 52px;
+        height: 52px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        margin-bottom: 18px;
+        font-size: 1.3rem;
+        background: linear-gradient(135deg, rgba(128,233,255,0.18), rgba(167,139,250,0.18));
+        border: 1px solid rgba(148,163,184,0.18);
+      }
+
+      .usecase-card h3 {
+        font-size: 1.2rem;
+        margin-bottom: 10px;
+      }
+
+      .usecase-card p {
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .impact-wrap {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        align-items: stretch;
+      }
+
+      .impact-box {
+        padding: 26px 22px;
+      }
+
+      .impact-box h3 {
+        font-size: 2rem;
+        margin-bottom: 18px;
+      }
+
+      .impact-box ul {
+        padding-left: 18px;
+        color: var(--muted);
+        margin: 0;
+      }
+
+      .impact-box li + li { margin-top: 12px; }
+
+      .visual-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 22px;
+      }
+
+      .visual-card {
+        padding: 22px;
+      }
+
+      .visual-card h3 {
+        font-size: 1.55rem;
+        margin-bottom: 16px;
+      }
+
+      .mini-graph {
+        min-height: 240px;
+        border-radius: 20px;
+        position: relative;
+        overflow: hidden;
+        background: radial-gradient(circle at center, rgba(128,233,255,0.09), transparent 60%), rgba(9,12,16,0.8);
+        border: 1px solid rgba(148,163,184,0.15);
+      }
+
+      .mini-graph svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .floating-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .pill {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px solid rgba(148,163,184,0.18);
+        background: rgba(255,255,255,0.02);
+        color: var(--muted);
+      }
+
+      .pill strong {
+        color: var(--text);
+      }
+
+      footer {
+        padding: 24px 0 58px;
+        color: var(--muted);
+        text-align: center;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.72rem;
+      }
+
+      @media (max-width: 980px) {
+        .hero-grid,
+        .impact-wrap,
+        .visual-grid,
+        .story-grid,
+        .usecase-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .timeline {
+          grid-template-columns: repeat(3, minmax(0,1fr));
+        }
+      }
+
+      @media (max-width: 720px) {
+        .nav-links {
+          display: none;
+        }
+
+        .story-grid,
+        .usecase-grid,
+        .impact-wrap,
+        .visual-grid,
+        .timeline {
+          grid-template-columns: 1fr;
+        }
+
+        .section-head {
+          display: block;
+        }
+
+        .cta-row {
+          flex-direction: column;
+        }
+
+        .primary-btn, .secondary-btn, .cta-btn {
+          width: 100%;
+        }
+
+        .hero {
+          padding-top: 52px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container nav">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>Citadel RAG</span>
+        </div>
+
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="#story">Story</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#usecases">Use Cases</a>
+          <a href="#impact">Impact</a>
+        </nav>
+
+        <a class="cta-btn" href="#workflow">Explore</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <div class="eyebrow">A living library for Westeros</div>
+            <h1>Every page, map, prophecy, and lineage, remembered.</h1>
+            <p>
+              Citadel RAG turns the complete world of A Song of Ice and Fire into a searchable,
+              cited, and grounded intelligence system — a digital maester for the modern reader.
+              It reads books, understands context, sees maps and illustrations, and answers with evidence.
+            </p>
+
+            <div class="cta-row">
+              <a class="primary-btn" href="#workflow">See the workflow</a>
+              <a class="secondary-btn" href="#usecases">View use cases</a>
+            </div>
+
+            <div class="hero-stats">
+              <div class="stat">
+                <strong>6+</strong>
+                <span>Books</span>
+              </div>
+              <div class="stat">
+                <strong>∞</strong>
+                <span>Memories</span>
+              </div>
+              <div class="stat">
+                <strong>1</strong>
+                <span>Reliable answer</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="art-shell" aria-label="Illustration of the system architecture">
+            <div class="map-wrap">
+              <svg viewBox="0 0 600 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Stylized Westeros map and AI pipeline">
+                <defs>
+                  <linearGradient id="land" x1="0" x2="1">
+                    <stop offset="0%" stop-color="#3b2b1b" />
+                    <stop offset="55%" stop-color="#6c4d2e" />
+                    <stop offset="100%" stop-color="#9d6a39" />
+                  </linearGradient>
+                  <linearGradient id="sea" x1="0" x2="1">
+                    <stop offset="0%" stop-color="#07243a" />
+                    <stop offset="100%" stop-color="#153d56" />
+                  </linearGradient>
+                  <linearGradient id="goldLine" x1="0" x2="1">
+                    <stop offset="0%" stop-color="#f6c76f" />
+                    <stop offset="100%" stop-color="#ff7a59" />
+                  </linearGradient>
+                </defs>
+
+                <rect x="0" y="0" width="600" height="520" fill="url(#sea)" opacity="0.9"/>
+
+                <path d="M95 120 L175 70 L270 90 L355 72 L430 98 L485 170 L450 242 L420 294 L310 318 L233 305 L180 342 L112 284 L82 202 Z"
+                      fill="url(#land)" opacity="0.96" stroke="#d9b06f" stroke-width="2"/>
+
+                <path d="M360 140 L445 180 L520 210 L530 280 L470 338 L380 318 L335 275 L352 202 Z"
+                      fill="#4d3a2a" opacity="0.7" stroke="#d9b06f" stroke-width="1.5"/>
+
+                <g fill="#f5dca5" opacity="0.9">
+                  <circle cx="190" cy="205" r="5"/>
+                  <circle cx="260" cy="175" r="5"/>
+                  <circle cx="330" cy="238" r="5"/>
+                  <circle cx="415" cy="215" r="5"/>
+                  <circle cx="460" cy="270" r="5"/>
+                </g>
+
+                <g stroke="url(#goldLine)" stroke-width="2.5" fill="none" stroke-linecap="round">
+                  <path d="M190 205 C225 205, 215 185, 260 175"/>
+                  <path d="M260 175 C285 190, 300 200, 330 238"/>
+                  <path d="M330 238 C360 240, 390 225, 415 215"/>
+                  <path d="M415 215 C440 230, 448 250, 460 270"/>
+                </g>
+
+                <g>
+                  <rect x="82" y="76" width="140" height="68" rx="18" fill="rgba(9,12,16,0.8)" stroke="rgba(255,255,255,0.15)"/>
+                  <text x="101" y="104" fill="#f5efe8" font-size="16" font-weight="700">PDFs</text>
+                  <text x="101" y="125" fill="#9aa9bd" font-size="12">Books + maps</text>
+
+                  <rect x="370" y="80" width="150" height="68" rx="18" fill="rgba(9,12,16,0.8)" stroke="rgba(255,255,255,0.15)"/>
+                  <text x="390" y="108" fill="#f5efe8" font-size="16" font-weight="700">Embedding</text>
+                  <text x="390" y="129" fill="#9aa9bd" font-size="12">Vector memory</text>
+
+                  <rect x="186" y="330" width="178" height="78" rx="20" fill="rgba(9,12,16,0.84)" stroke="rgba(255,255,255,0.15)"/>
+                  <text x="210" y="360" fill="#f5efe8" font-size="16" font-weight="700">Retrieval +</text>
+                  <text x="210" y="382" fill="#f5efe8" font-size="16" font-weight="700">Grounded answer</text>
+                </g>
+
+                <g fill="#f0c66d">
+                  <circle cx="190" cy="205" r="9" fill="#ffb36b" />
+                  <circle cx="260" cy="175" r="9" fill="#f6c76f" />
+                  <circle cx="330" cy="238" r="9" fill="#ff7a59" />
+                  <circle cx="415" cy="215" r="9" fill="#f7d88b" />
+                  <circle cx="460" cy="270" r="9" fill="#ff9b6d" />
+                </g>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="story">
+        <div class="container">
+          <div class="section-head">
+            <h2>The story behind the scroll</h2>
+            <p>
+              This project is not just a chatbot. It is a knowledge vessel: it reads a world, understands its structure,
+              and gives back grounded answers with source awareness.
+            </p>
+          </div>
+
+          <div class="story-grid">
+            <article class="story-card card-panel">
+              <div class="num">01</div>
+              <h3>From text to memory</h3>
+              <p>
+                Every chapter, page, and image is transformed into retrievable context — not just summarized, but indexed
+                with structure, metadata, and relationships.
+              </p>
+            </article>
+
+            <article class="story-card card-panel">
+              <div class="num">02</div>
+              <h3>From chaos to clarity</h3>
+              <p>
+                The system preserves chapter boundaries, imagery, and narrative flow so the answer feels coherent even when
+                the knowledge is deep and fragmented.
+              </p>
+            </article>
+
+            <article class="story-card card-panel">
+              <div class="num">03</div>
+              <h3>From lookup to wisdom</h3>
+              <p>
+                It does not guess. It retrieves the right evidence, reasons with context, and cites the source so the user can trust it.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow">
+        <div class="container">
+          <div class="section-head">
+            <h2>Workflow of the system</h2>
+            <p>
+              A proper intelligence pipeline works in layers: collect, interpret, index, retrieve, and answer responsibly.
+            </p>
+          </div>
+
+          <div class="timeline">
+            <article class="step card-panel">
+              <div class="step-icon">1</div>
+              <h3>Ingest</h3>
+              <p>PDFs and worldbook files enter the system from the source corpus.</p>
+            </article>
+
+            <article class="step card-panel">
+              <div class="step-icon">2</div>
+              <h3>Parse</h3>
+              <p>Text, pages, diagrams, maps, and illustrations are extracted with structure intact.</p>
+            </article>
+
+            <article class="step card-panel">
+              <div class="step-icon">3</div>
+              <h3>Caption</h3>
+              <p>Visual content is understood through AI vision and enriched with descriptive metadata.</p>
+            </article>
+
+            <article class="step card-panel">
+              <div class="step-icon">4</div>
+              <h3>Chunk</h3>
+              <p>Long narratives are split by paragraph, sentence, and context to preserve meaning without fragmentation.</p>
+            </article>
+
+            <article class="step card-panel">
+              <div class="step-icon">5</div>
+              <h3>Embed</h3>
+              <p>Each chunk is converted into vector embeddings and stored in a semantic search layer.</p>
+            </article>
+
+            <article class="step card-panel">
+              <div class="step-icon">6</div>
+              <h3>Serve</h3>
+              <p>User questions trigger retrieval and generation, followed by source-backed, cited responses.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="usecases">
+        <div class="container">
+          <div class="section-head">
+            <h2>Use cases</h2>
+            <p>
+              The platform becomes useful whenever a person needs deep understanding across complex, interconnected information.
+            </p>
+          </div>
+
+          <div class="usecase-grid">
+            <article class="usecase-card card-panel">
+              <div class="icon">📚</div>
+              <h3>Readers & researchers</h3>
+              <p>Ask who is related to whom, where key events happened, or what prophecy a chapter foreshadows.</p>
+            </article>
+
+            <article class="usecase-card card-panel">
+              <div class="icon">🗺️</div>
+              <h3>World builders</h3>
+              <p>Trace family trees, political factions, or armies and place them against the broader map of the world.</p>
+            </article>
+
+            <article class="usecase-card card-panel">
+              <div class="icon">🎓</div>
+              <h3>Educators</h3>
+              <p>Build interactive lesson flows around character arcs, lore structure, and chronology.</p>
+            </article>
+
+            <article class="usecase-card card-panel">
+              <div class="icon">🧠</div>
+              <h3>Knowledge teams</h3>
+              <p>Apply the same architecture to legal, scientific, policy, and enterprise corpora with citation and retrieval.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="impact">
+        <div class="container">
+          <div class="section-head">
+            <h2>How it improves life</h2>
+            <p>
+              Great systems do not just respond faster — they make complex knowledge more discoverable, trustworthy, and useful.
+            </p>
+          </div>
+
+          <div class="impact-wrap">
+            <div class="impact-box card-panel">
+              <h3>Better decisions, better understanding</h3>
+              <ul>
+                <li>Builds confidence by grounding answers in the original text.</li>
+                <li>Helps users learn faster without reading entire tomes manually.</li>
+                <li>Connects fragmented facts across books, maps, and chapters.</li>
+                <li>Reduces confusion caused by memory gaps and conflicting interpretations.</li>
+              </ul>
+            </div>
+
+            <div class="impact-box card-panel">
+              <h3>Real-world value</h3>
+              <ul>
+                <li>Transforms lore exploration into a guided, interactive experience.</li>
+                <li>Supports teaching and storytelling with deterministic evidence.</li>
+                <li>Creates a practical pattern for enterprise knowledge search and RAG systems.</li>
+                <li>Moves AI from generic answers toward trustworthy, grounded intelligence.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="container">
+          <div class="section-head">
+            <h2>Visual feel of the system</h2>
+            <p>
+              The experience is designed like a fantasy archive: warm embers, cold maps, glowing nodes, and structured flow.
+            </p>
+          </div>
+
+          <div class="visual-grid">
+            <div class="visual-card card-panel">
+              <h3>Knowledge network</h3>
+              <div class="mini-graph">
+                <svg viewBox="0 0 500 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Knowledge graph">
+                  <g stroke="rgba(255,255,255,0.22)" stroke-width="1.5">
+                    <path d="M110 75 L240 80 L330 140"/>
+                    <path d="M110 75 L165 180"/>
+                    <path d="M240 80 L250 180"/>
+                    <path d="M330 140 L250 180"/>
+                    <path d="M165 180 L250 180"/>
+                    <path d="M330 140 L420 95"/>
+                    <path d="M330 140 L430 180"/>
+                  </g>
+                  <g fill="#f5dca5">
+                    <circle cx="110" cy="75" r="8"/>
+                    <circle cx="240" cy="80" r="8"/>
+                    <circle cx="330" cy="140" r="8"/>
+                    <circle cx="165" cy="180" r="8"/>
+                    <circle cx="250" cy="180" r="8"/>
+                    <circle cx="420" cy="95" r="8"/>
+                    <circle cx="430" cy="180" r="8"/>
+                  </g>
+                </svg>
+              </div>
+            </div>
+
+            <div class="floating-stack">
+              <div class="pill"><span>Retrieval</span> <strong>High signal</strong></div>
+              <div class="pill"><span>Context</span> <strong>Grounded</strong></div>
+              <div class="pill"><span>Answer</span> <strong>Cited</strong></div>
+              <div class="pill"><span>Experience</span> <strong>Readable</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      Citadel RAG — where the archive becomes a living conversation
+    </footer>
+  </body>
+</html>
