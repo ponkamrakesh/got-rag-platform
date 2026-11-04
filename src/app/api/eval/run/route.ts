@@ -7,7 +7,7 @@ import { safeKvGet, safeKvSet } from '@/lib/kv'
 export const maxDuration = 60
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
-const JINA_URL = 'https://api.jina.ai/v1/embeddings'
+const PINECONE_EMBED_URL = 'https://pinecone.io'
 const TOP_K = 4
 const GROQ_SLEEP_MS = 2500
 
@@ -62,26 +62,42 @@ async function groqChat(
   throw new Error('Groq rate limit exceeded after retries')
 }
 
-async function jinaEmbed(text: string): Promise<number[]> {
-  if (!process.env.JINA_API_KEY) throw new Error('JINA_API_KEY missing')
-  const res = await fetch(JINA_URL, {
+async function pineconeEmbed(text: string): Promise<number[]> {
+  if (!process.env.PINECONE_API_KEY) throw new Error('PINECONE_API_KEY missing')
+  
+  const res = await fetch(PINECONE_EMBED_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.JINA_API_KEY}`,
+      'Api-Key': process.env.PINECONE_API_KEY,
     },
-    body: JSON.stringify({ input: [text], model: 'jina-embeddings-v3' }),
+    body: JSON.stringify({
+      model: 'llama-text-embed-v2',
+      parameters: {
+        input_type: 'query'
+      },
+      inputs: [{ text }],
+    }),
   })
+
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`Jina ${res.status}: ${txt.slice(0, 200)}`)
+    throw new Error(`Pinecone Embedding Error ${res.status}: ${txt.slice(0, 200)}`)
   }
+
   const data = await res.json()
-  return data.data?.[0]?.embedding
+  
+  // Pinecone embed returns vectors nested inside data.data[0].values
+  const embedding = data.data?.[0]?.values
+  if (!embedding) {
+    throw new Error('Pinecone embedding values missing from response structural breakdown')
+  }
+  
+  return embedding
 }
 
 async function retrieve(query: string) {
-  const vector = await jinaEmbed(query)
+  const vector = await pineconeEmbed(query)
   const results = await index.query({
     vector,
     topK: TOP_K,
