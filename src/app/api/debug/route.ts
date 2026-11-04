@@ -12,7 +12,7 @@ export async function GET() {
 
   // Test Pinecone Native Embedding API connectivity with a dummy text
   try {
-    const embedRes = await fetch('https://pinecone.io', {
+    const embedRes = await fetch('https://pinecone.io/embed', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
