@@ -4,7 +4,7 @@ import { safeKvLpush, safeKvSet, safeKvLrange } from '@/lib/kv'
 
 export const maxDuration = 60
 
-const PINECONE_EMBED_URL = 'https://pinecone.io'
+const PINECONE_EMBED_URL = 'https://pinecone.io/embed'
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now()
