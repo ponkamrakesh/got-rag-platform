@@ -143,10 +143,10 @@ export async function POST(req: NextRequest) {
 
     // 8. Extract retrieved chunks
     const chunks = (results.matches || []).map((match: any) => ({
-      id: match.id,
-      score: match.score,
-      metadata: match.metadata,
-    }))
+  id: match.id,
+  score: match.score,
+  ...(match.metadata || {}),
+}))
 
     const latencyMs = Date.now() - t0
 
