@@ -12,43 +12,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing query' }, { status: 400 })
     }
 
-    if (!process.env.JINA_API_KEY) {
-      console.error('❌ JINA_API_KEY is not set on Vercel')
+    if (!process.env.PINECONE_API_KEY) {
+      console.error('❌ PINECONE_API_KEY is not set on Vercel')
       return NextResponse.json(
-        { error: 'Server misconfiguration: JINA_API_KEY missing' },
+        { error: 'Server misconfiguration: PINECONE_API_KEY missing' },
         { status: 500 }
       )
     }
 
-    // === JINA EMBEDDING via raw fetch ===
-    const jinaRes = await fetch('https://api.jina.ai/v1/embeddings', {
+    // === PINECONE NATIVE EMBEDDING via raw fetch ===
+    const pineconeEmbedRes = await fetch('https://pinecone.io', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.JINA_API_KEY}`,
+        'Api-Key': process.env.PINECONE_API_KEY,
       },
       body: JSON.stringify({
-        input: [query],
-        model: 'jina-embeddings-v3',
+        model: 'llama-text-embed-v2',
+        parameters: {
+          input_type: 'query'
+        },
+        inputs: [{ text: query }],
       }),
     })
 
-    if (!jinaRes.ok) {
-      const errText = await jinaRes.text()
-      console.error('Jina embedding error:', jinaRes.status, errText)
+    if (!pineconeEmbedRes.ok) {
+      const errText = await pineconeEmbedRes.text()
+      console.error('Pinecone embedding error:', pineconeEmbedRes.status, errText)
       return NextResponse.json(
-        { error: `Jina embedding failed: ${jinaRes.status} ${errText.slice(0, 200)}` },
+        { error: `Pinecone embedding failed: ${pineconeEmbedRes.status} ${errText.slice(0, 200)}` },
         { status: 502 }
       )
     }
 
-    const jinaData = await jinaRes.json()
-    const vector: number[] = jinaData.data?.[0]?.embedding
+    const pineconeEmbedData = await pineconeEmbedRes.json()
+    const vector: number[] = pineconeEmbedData.data?.[0]?.values
 
     if (!vector || !Array.isArray(vector)) {
-      console.error('Jina returned invalid embedding format:', JSON.stringify(jinaData).slice(0, 500))
+      console.error('Pinecone returned invalid embedding format:', JSON.stringify(pineconeEmbedData).slice(0, 500))
       return NextResponse.json(
-        { error: 'Jina returned invalid embedding format' },
+        { error: 'Pinecone returned invalid embedding format' },
         { status: 502 }
       )
     }
