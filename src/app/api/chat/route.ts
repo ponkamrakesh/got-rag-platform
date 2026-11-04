@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       `EXCERPTS:\n${contextText}`
 
     const groqBody = {
-      model: 'llama-3.1-8b-instant',
+      model: 'openai/gpt-oss-20b',
       messages: [
         { role: 'system', content: systemPrompt },
         ...messages.slice(-6),
