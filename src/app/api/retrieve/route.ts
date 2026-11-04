@@ -1,110 +1,229 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { index } from '@/lib/pinecone'
-import { safeKvLpush, safeKvSet, safeKvLrange } from '@/lib/kv'
 
+import { NextRequest, NextResponse } from 'next/server'
+
+import { index } from '@/lib/pinecone'
+import {
+  safeKvLpush,
+  safeKvSet,
+  safeKvLrange,
+} from '@/lib/kv'
+
+export const runtime = 'nodejs'
 export const maxDuration = 60
 
-const PINECONE_EMBED_URL = 'https://pinecone.io/embed'
+const PINECONE_EMBED_URL = 'https://api.pinecone.io/embed'
+const EMBEDDING_MODEL = 'llama-text-embed-v2'
 
 export async function POST(req: NextRequest) {
   const t0 = Date.now()
+
   try {
-    const { query, topK = 8, bookFilter } = await req.json()
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json({ error: 'Missing query' }, { status: 400 })
+    // 1. Validate request
+    const body = await req.json()
+
+    const {
+      query,
+      topK = 8,
+      bookFilter,
+    } = body
+
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return NextResponse.json(
+        { error: 'A valid query is required' },
+        { status: 400 }
+      )
     }
 
-    if (!process.env.PINECONE_API_KEY) {
-      console.error('❌ PINECONE_API_KEY is not set on Vercel')
+    const normalizedTopK = Math.min(
+      Math.max(Number(topK) || 8, 1),
+      100
+    )
+
+    // 2. Validate Pinecone API key
+    const apiKey = process.env.PINECONE_API_KEY
+
+    if (!apiKey) {
+      console.error('PINECONE_API_KEY is not configured')
+
       return NextResponse.json(
-        { error: 'Server misconfiguration: PINECONE_API_KEY missing' },
+        { error: 'Server misconfiguration: Pinecone API key missing' },
         { status: 500 }
       )
     }
 
-    // === PINECONE NATIVE EMBEDDING via raw fetch ===
-    const pineconeEmbedRes = await fetch(PINECONE_EMBED_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Api-Key': process.env.PINECONE_API_KEY,
-        'X-Pinecone-Api-Version': '2025-04',
-      },
-      body: JSON.stringify({
-        model: 'llama-text-embed-v2',
-        parameters: {
-          input_type: 'query'
+    // 3. Generate query embedding using Pinecone Inference
+    const pineconeEmbedRes = await fetch(
+      PINECONE_EMBED_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Api-Key': apiKey,
+          'X-Pinecone-Api-Version': '2025-04',
         },
-        inputs: [{ text: query }],
-      }),
-    })
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          parameters: {
+            input_type: 'query',
+          },
+          inputs: [
+            {
+              text: query.trim(),
+            },
+          ],
+        }),
+      }
+    )
 
+    // 4. Handle embedding API errors
     if (!pineconeEmbedRes.ok) {
       const errText = await pineconeEmbedRes.text()
-      console.error('Pinecone embedding error:', pineconeEmbedRes.status, errText)
+
+      console.error(
+        'Pinecone embedding error:',
+        pineconeEmbedRes.status,
+        errText.slice(0, 500)
+      )
+
       return NextResponse.json(
-        { error: `Pinecone embedding failed: ${pineconeEmbedRes.status} ${errText.slice(0, 200)}` },
+        {
+          error: 'Pinecone embedding service failed',
+          status: pineconeEmbedRes.status,
+          details: errText.slice(0, 300),
+        },
         { status: 502 }
       )
     }
 
+    // 5. Validate embedding response
     const pineconeEmbedData = await pineconeEmbedRes.json()
-    const vector: number[] = pineconeEmbedData.data?.[0]?.values
 
-    if (!vector || !Array.isArray(vector)) {
-      console.error('Pinecone returned invalid embedding format:', JSON.stringify(pineconeEmbedData).slice(0, 500))
+    const vector: number[] | undefined =
+      pineconeEmbedData.data?.[0]?.values
+
+    if (
+      !Array.isArray(vector) ||
+      vector.length === 0 ||
+      !vector.every(
+        (value: unknown) =>
+          typeof value === 'number' &&
+          Number.isFinite(value)
+      )
+    ) {
+      console.error(
+        'Invalid Pinecone embedding response:',
+        JSON.stringify(pineconeEmbedData).slice(0, 500)
+      )
+
       return NextResponse.json(
-        { error: 'Pinecone returned invalid embedding format' },
+        { error: 'Invalid embedding vector returned by Pinecone' },
         { status: 502 }
       )
     }
 
-    // === PINECONE RETRIEVAL ===
+    // 6. Prepare metadata filter
     const filter: Record<string, any> = {}
-    if (bookFilter) {
-      filter.book = { $eq: bookFilter }
+
+    if (bookFilter && typeof bookFilter === 'string') {
+      filter.book = {
+        $eq: bookFilter,
+      }
     }
 
+    // 7. Query existing Pinecone index
     const results = await index.query({
       vector,
-      topK,
+      topK: normalizedTopK,
       includeMetadata: true,
-      filter: Object.keys(filter).length ? filter : undefined,
+      filter: Object.keys(filter).length
+        ? filter
+        : undefined,
     })
 
-    const chunks = (results.matches || []).map((m: any) => m.metadata)
+    // 8. Extract retrieved chunks
+    const chunks = (results.matches || []).map((match: any) => ({
+      id: match.id,
+      score: match.score,
+      metadata: match.metadata,
+    }))
+
     const latencyMs = Date.now() - t0
 
-    // === LIVE OPERATIONAL METRICS LOGGING ===
+    // 9. Log operational metrics
     const logEntry = {
       t: Date.now(),
-      q: query.slice(0, 120),
-      k: topK,
+      q: query.trim().slice(0, 120),
+      k: normalizedTopK,
       c: chunks.length,
       l: latencyMs,
     }
-    
-    await safeKvLpush('citadel:ops:queries', logEntry, 200)
 
-    // Update rolling summary from last 100 log entries
-    const recentLogs = await safeKvLrange<typeof logEntry>('citadel:ops:queries', 0, 99)
-    const total = recentLogs.length
-    const avgLat = total > 0
-      ? Math.round(recentLogs.reduce((a, b) => a + (b.l || 0), 0) / total)
-      : 0
+    try {
+      await safeKvLpush(
+        'citadel:ops:queries',
+        logEntry,
+        200
+      )
 
-    await safeKvSet('citadel:ops:summary', {
-      totalQueries: total,
-      avgLatencyMs: avgLat,
-      lastQueryAt: Date.now(),
-      lastQuery: query.slice(0, 120),
+      // 10. Calculate rolling operational summary
+      const recentLogs =
+        await safeKvLrange<typeof logEntry>(
+          'citadel:ops:queries',
+          0,
+          99
+        )
+
+      const total = recentLogs.length
+
+      const avgLat =
+        total > 0
+          ? Math.round(
+              recentLogs.reduce(
+                (sum, item) => sum + (item.l || 0),
+                0
+              ) / total
+            )
+          : 0
+
+      await safeKvSet(
+        'citadel:ops:summary',
+        {
+          totalQueries: total,
+          avgLatencyMs: avgLat,
+          lastQueryAt: Date.now(),
+          lastQuery: query.trim().slice(0, 120),
+        }
+      )
+    } catch (metricsError) {
+      // Metrics failure should not break retrieval
+      console.error(
+        'Operational metrics logging failed:',
+        metricsError
+      )
+    }
+
+    // 11. Return successful response
+    return NextResponse.json({
+      success: true,
+      chunks,
+      totalChunks: chunks.length,
+      latencyMs,
     })
 
-    return NextResponse.json({ chunks, latencyMs })
-  } catch (err: any) {
-    console.error('Retrieve error:', err)
+  } catch (err: unknown) {
+    console.error('Retrieve API error:', err)
+
+    const message =
+      err instanceof Error
+        ? err.message
+        : 'Internal server error'
+
     return NextResponse.json(
-      { error: err.message || 'Internal error' },
+      {
+        success: false,
+        error: message,
+      },
       { status: 500 }
     )
   }
