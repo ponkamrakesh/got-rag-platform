@@ -7,7 +7,7 @@ export const maxDuration = 60
 const GROQ_URL =
   'https://api.groq.com/openai/v1/chat/completions'
 
-const GROQ_MODEL = 'llama-3.1-8b-instant'
+const GROQ_MODEL = 'openai/gpt-oss-20b'
 const MAX_RETRIES = 3
 const BASE_DELAY_MS = 2000
 
