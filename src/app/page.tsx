@@ -72,27 +72,96 @@ export default function HomePage() {
     setSources([])
 
     try {
-      // 1. Retrieve sources
-      const retrieveRes = await fetch('/api/retrieve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userMsg, topK: 8 }),
-      })
+      
+// 1. Contextual intent classification
+const conversationMessages = [
+  ...messages,
+  { role: 'user' as const, content: userMsg },
+].slice(-12)
 
-      if (!retrieveRes.ok) {
-        const errBody = await retrieveRes.text()
-        throw new Error(
-          `Retrieve HTTP ${retrieveRes.status}: ${errBody.slice(0, 200)}`
-        )
-      }
+const intentRes = await fetch('/api/intent', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    messages: conversationMessages,
+  }),
+})
 
-      const { chunks } = await retrieveRes.json()
-      if (!Array.isArray(chunks)) {
-        throw new Error('Retrieve returned invalid chunks format')
-      }
-      setSources(chunks || [])
+if (!intentRes.ok) {
+  const error = await intentRes.text()
+  throw new Error(`Intent API failed: ${error}`)
+}
 
-      // 2. Stream answer
+const intent = await intentRes.json()
+
+console.log('Detected intent:', intent.intent)
+console.log('Retrieval required:', intent.needs_retrieval)
+
+let chunks: any[] = []
+
+// 2. Conditional retrieval
+if (intent.needs_retrieval) {
+  const searchQuery =
+    intent.standalone_query?.trim() || userMsg
+
+  console.log('Retrieving contextual query:', searchQuery)
+
+  const retrieveRes = await fetch('/api/retrieve', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: searchQuery,
+      topK: 8,
+    }),
+  })
+
+  if (!retrieveRes.ok) {
+    const error = await retrieveRes.text()
+    throw new Error(`Retrieve API failed: ${error}`)
+  }
+
+  const retrieveData = await retrieveRes.json()
+
+  if (!Array.isArray(retrieveData.chunks)) {
+    throw new Error('Invalid retrieval response')
+  }
+
+  chunks = retrieveData.chunks
+
+  console.log(`Retrieved ${chunks.length} chunks`)
+} else {
+  console.log('Skipping Pinecone retrieval')
+}
+
+setSources(chunks)
+
+// 3. Continue with your existing streaming request
+setLoading(false)
+setStreaming(true)
+
+setMessages((prev) => [
+  ...prev,
+  { role: 'assistant', content: '' },
+])
+
+const chatRes = await fetch('/api/chat', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    messages: conversationMessages,
+    sources: chunks,
+    mode: intent.needs_retrieval ? 'rag' : 'chat',
+  }),
+})
+
+
+      // 4. Stream answer
       setLoading(false)
       setStreaming(true)
       setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
