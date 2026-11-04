@@ -116,13 +116,13 @@ export default function HomePage() {
     setSources([])
 
     // Capture conversation history before updating React state.
-    const conversationMessages: Message[] = [
-      ...messages,
-      {
-        role: 'user',
-        content: userMsg,
-      },
-    ].slice(-12)
+   const conversationMessages: Message[] = [
+  ...messages,
+  {
+    role: 'user' as const,
+    content: userMsg,
+  },
+].slice(-12)
 
     // Add the user's message and an assistant placeholder.
     setMessages((prev) => [
